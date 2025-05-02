@@ -12,6 +12,7 @@ from collections import defaultdict
 import plotly.express as px
 import plotly.graph_objects as go
 import base64
+import traceback
 
 st.set_page_config(layout="wide")
 st.title("Masters of Analytics: Enrollment & Preferences Explorer")
@@ -259,32 +260,161 @@ def process_preference_file(uploaded_file, label):
         st.error(f"Error processing preference file '{uploaded_file.name}': {str(e)}")
         return None
 
-# Upload multiple enrollment and preferences CSVs
+# Function to validate data files and provide helpful error messages
+def validate_file_content(uploaded_file, file_type):
+    """Validate file contents and return (is_valid, error_message)"""
+    try:
+        # Reset file pointer
+        uploaded_file.seek(0)
+        
+        # Sample first 10 lines for validation
+        sample_lines = []
+        for i, line in enumerate(uploaded_file):
+            if i >= 10:  # Read up to 10 lines
+                break
+            sample_lines.append(line.decode('utf-8'))
+        
+        # Reset file pointer for later processing
+        uploaded_file.seek(0)
+            
+        # If file is empty
+        if not sample_lines:
+            return False, "File appears to be empty"
+        
+        # Check for enrollment data format
+        if file_type == "enrollment":
+            # Check for header
+            if "Subject" not in sample_lines[0] or "Catalog Nbr" not in sample_lines[0]:
+                return False, "Missing required headers: 'Subject' and/or 'Catalog Nbr'"
+            
+            # Check for INDENG in data rows
+            found_indeng = False
+            for line in sample_lines[1:]:  # Skip header
+                if "INDENG" in line:
+                    found_indeng = True
+                    break
+            
+            if not found_indeng:
+                return False, "No 'INDENG' entries found in data rows"
+                
+            return True, "Enrollment file format appears valid"
+            
+        # Check for preferences data format
+        elif file_type == "preferences":
+            # Look for preferences column or data
+            found_preferences = False
+            for line in sample_lines:
+                if "INDENG" in line:
+                    found_preferences = True
+                    break
+            
+            if not found_preferences:
+                return False, "No 'INDENG' entries found in file. Preferences should contain INDENG course codes."
+            
+            # Check for multiple preferences per row (comma-separated list)
+            multiple_prefs = False
+            for line in sample_lines:
+                if "INDENG" in line and line.count("INDENG") > 1:
+                    multiple_prefs = True
+                    break
+                    
+            if not multiple_prefs:
+                return False, "Warning: No rows with multiple INDENG entries found. Preferences should contain multiple course selections."
+            
+            return True, "Preferences file format appears valid"
+    
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        return False, f"Error validating file: {str(e)}\n{error_trace}"
+        
+    return True, "File format looks good"
+
+# Upload and validate multiple enrollment and preferences CSVs
 col1, col2 = st.columns(2)
 with col1:
     uploaded_enrolls = st.file_uploader("Upload Enrollment CSV(s) - Must contain 'Enrollment' in filename", 
                                        type="csv", key="enroll", accept_multiple_files=True)
     
-    # Check if any uploaded files don't match the required format
+    # Validate file names and content
     if uploaded_enrolls:
+        # Check filenames
         invalid_files = [f.name for f in uploaded_enrolls if not is_valid_enrollment_file(f.name)]
         if invalid_files:
-            st.error(f"The following files are not valid enrollment files and will be ignored: {', '.join(invalid_files)}")
-            # Filter out invalid files
+            st.error(f"The following files do not have 'Enrollment' in the filename and will be ignored: {', '.join(invalid_files)}")
             uploaded_enrolls = [f for f in uploaded_enrolls if is_valid_enrollment_file(f.name)]
+        
+        # Validate content of each file
+        for uploaded_file in uploaded_enrolls:
+            is_valid, message = validate_file_content(uploaded_file, "enrollment")
+            if not is_valid:
+                st.warning(f"⚠️ Warning for '{uploaded_file.name}': {message}")
+            else:
+                st.success(f"✅ '{uploaded_file.name}': {message}")
             
 with col2:
     uploaded_prefs = st.file_uploader("Upload Preferences CSV(s) - Must contain 'Form Responses' in filename", 
                                      type=["csv"], key="prefs", accept_multiple_files=True)
     
-    # Check if any uploaded files don't match the required format
+    # Validate file names and content
     if uploaded_prefs:
+        # Check filenames
         invalid_files = [f.name for f in uploaded_prefs if not is_valid_preferences_file(f.name)]
         if invalid_files:
-            st.error(f"The following files are not valid preference files and will be ignored: {', '.join(invalid_files)}")
-            # Filter out invalid files
+            st.error(f"The following files do not have 'Form Responses' in the filename and will be ignored: {', '.join(invalid_files)}")
             uploaded_prefs = [f for f in uploaded_prefs if is_valid_preferences_file(f.name)]
+        
+        # Validate content of each file
+        for uploaded_file in uploaded_prefs:
+            is_valid, message = validate_file_content(uploaded_file, "preferences")
+            if not is_valid:
+                st.warning(f"⚠️ Warning for '{uploaded_file.name}': {message}")
+            else:
+                st.success(f"✅ '{uploaded_file.name}': {message}")
+                
+# If errors are detected, show help section
+if (uploaded_enrolls and any(not validate_file_content(f, "enrollment")[0] for f in uploaded_enrolls)) or \
+   (uploaded_prefs and any(not validate_file_content(f, "preferences")[0] for f in uploaded_prefs)):
+    st.error("⚠️ Some files have validation errors. Please review the warnings above and check the File Format Help section below.")
+    
+    with st.expander("📋 File Format Help"):
+        st.markdown("""
+        ### Fixing Common File Format Issues
+        
+        #### Enrollment Files
+        
+        Your enrollment file should look like this:
+        ```
+        Subject,Catalog Nbr,Section
+        INDENG,221,1
+        INDENG,221,1
+        INDENG,231,1
+        ```
+        
+        Common issues:
+        1. Missing headers - Make sure the first row has "Subject" and "Catalog Nbr"
+        2. No INDENG entries - Check that your data contains "INDENG" course codes
+        3. Wrong delimiter - Make sure you're using commas to separate values
+        
+        #### Preferences Files
+        
+        Your preferences file should include a column containing entries like:
+        ```
+        "INDENG 221 Introduction to Financial Engineering, INDENG 231 Introduction to Data Modeling, INDENG 242B Machine Learning"
+        ```
+        
+        Common issues:
+        1. No INDENG entries - Check that your data contains "INDENG" course codes
+        2. Single preferences only - Each row should have multiple preferences (multiple "INDENG" entries)
+        3. Wrong delimiter/format - If using Excel, save as CSV before uploading
+        
+        #### Filename Requirements
+        
+        - Enrollment files must contain "Enrollment" in the filename
+        - Preferences files must contain "Form Responses" in the filename
+        - Include semester information like "SP24" or "FA23" in the filename for proper semester labeling
+        """)
 
+# Process files section
 if uploaded_enrolls and show_enrollment_overview:
     st.subheader("📊 Enrollment Data Overview")
     try:
