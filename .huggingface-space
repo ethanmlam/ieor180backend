@@ -2,7 +2,7 @@ title: IEOR 180 Backend
 emoji: 🚀
 colorFrom: blue
 colorTo: indigo
-pinned: false
-app_port: 7860 
 sdk: streamlit
 app_file: app.py
+pinned: false
+app_port: 7860 
