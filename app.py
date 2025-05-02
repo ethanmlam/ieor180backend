@@ -84,9 +84,9 @@ with st.expander("ℹ️ Data Format Information"):
     Each row represents one enrolled student. The app will count them to determine total enrollment per course.
     """)
 
-# Add demo files section toggle in sidebar
+# Add demo files section toggle as the first item in sidebar
 st.sidebar.header("Demo Files")
-show_demo_files = st.sidebar.checkbox("Show Demo Files Section", value=False)
+show_demo_files = st.sidebar.checkbox("Show Demo Files Section", value=True)
 
 # Sidebar for display options
 st.sidebar.header("Display Options")
@@ -96,7 +96,6 @@ show_enrollment_overview = st.sidebar.checkbox("Show Enrollment Data Overview", 
 
 show_merged_preferences = st.sidebar.checkbox("Show Merged Preferences Table", value=True)
 show_preference_chart = st.sidebar.checkbox("Show Preference Chart", value=True)
-
 
 # Add download option for processed data
 st.sidebar.header("Download Options")
@@ -254,6 +253,30 @@ def process_preference_file(uploaded_file, label):
         st.error(f"Error processing preference file '{uploaded_file.name}': {str(e)}")
         return None
 
+# Demo Files Section (conditionally displayed)
+if show_demo_files:
+    st.subheader("Demo Files")
+    
+    demo_col1, demo_col2 = st.columns(2)
+    
+    with demo_col1:
+        enrollment_data, _ = create_sample_data()
+        st.download_button(
+            label="Download Enrollment Example",
+            data=enrollment_data,
+            file_name="Example_Enrollment_SP22.csv",
+            mime="text/csv"
+        )
+        
+    with demo_col2:
+        _, preferences_data = create_sample_data()
+        st.download_button(
+            label="Download Preferences Example",
+            data=preferences_data,
+            file_name="Example Form Responses SP22.csv",
+            mime="text/csv"
+        )
+
 # Upload multiple enrollment and preferences CSVs
 col1, col2 = st.columns(2)
 with col1:
@@ -279,30 +302,6 @@ with col2:
             st.error(f"The following files are not valid preference files and will be ignored: {', '.join(invalid_files)}")
             # Filter out invalid files
             uploaded_prefs = [f for f in uploaded_prefs if is_valid_preferences_file(f.name)]
-
-# Demo Files Section (conditionally displayed)
-if show_demo_files:
-    st.subheader("Demo Files")
-    
-    demo_col1, demo_col2 = st.columns(2)
-    
-    with demo_col1:
-        enrollment_data, _ = create_sample_data()
-        st.download_button(
-            label="Download Enrollment Example",
-            data=enrollment_data,
-            file_name="Example_Enrollment_SP22.csv",
-            mime="text/csv"
-        )
-        
-    with demo_col2:
-        _, preferences_data = create_sample_data()
-        st.download_button(
-            label="Download Preferences Example",
-            data=preferences_data,
-            file_name="Example Form Responses SP22.csv",
-            mime="text/csv"
-        )
 
 if uploaded_enrolls and show_enrollment_overview:
     st.subheader("📊 Enrollment Data Overview")
