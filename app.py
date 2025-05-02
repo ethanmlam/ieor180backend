@@ -396,10 +396,6 @@ if uploaded_enrolls and show_enrollment_overview:
             # Use custom sort function for Catalog Nbr
             sorted_courses = sort_course_numbers(plot_data['Catalog Nbr'].unique())
             
-            # Calculate maximum enrollment value for y-axis range
-            max_enrollment = plot_data['Enrollment'].max()
-            y_max = max_enrollment * 1.1  # Add 10% buffer for better visibility
-            
             # Create interactive bar chart with Plotly
             fig = px.bar(
                 plot_data, 
@@ -412,22 +408,32 @@ if uploaded_enrolls and show_enrollment_overview:
                 category_orders={"Catalog Nbr": sorted_courses}
             )
             
+            # Calculate a reasonable maximum for y-axis
+            max_enrollment = plot_data['Enrollment'].max()
+            y_max = max(20, int(max_enrollment * 1.2))  # At least 20 or 20% above max
+            
+            # Set explicit height and configure layout completely
             fig.update_layout(
+                height=600,  # Fixed height in pixels
+                autosize=True,  # Allow horizontal resizing 
                 xaxis_title="Course Number",
                 yaxis_title="Enrollment Count",
                 legend_title="Year",
                 barmode='group',
+                margin=dict(l=50, r=50, t=80, b=50),  # Add some margin
                 xaxis=dict(
                     type='category',
                     tickmode='array',
                     tickvals=sorted_courses
                 ),
                 yaxis=dict(
-                    range=[0, y_max]  # Set explicit range from 0 to calculated maximum
+                    range=[0, y_max],  # Explicit range
+                    fixedrange=False  # Allow zooming on y-axis
                 )
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            # Use streamlit's plotly_chart with use_container_width
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
             
     except Exception as e:
         st.error(f"Error processing enrollment files: {e}")
