@@ -169,7 +169,7 @@ def is_valid_csv(file):
     # Check if there's any content or at least a header
     return len(sample.strip()) > 0 and b',' in sample
 
-# Function to process preferences files by splitting comma-separated entries
+# Function to process preferences files by splitting on INDENG patterns rather than commas
 def process_preference_file(uploaded_file, label):
     try:
         # Check if the file is empty
@@ -205,31 +205,26 @@ def process_preference_file(uploaded_file, label):
             # Find columns that might contain preference data
             pref_data = None
             
-            # Try to find a column with comma-separated preferences
+            # Try to find a column with preferences data
             for col in row.index:
-                if pd.notna(row[col]) and isinstance(row[col], str) and ',' in row[col] and 'INDENG' in row[col]:
+                if pd.notna(row[col]) and isinstance(row[col], str) and 'INDENG' in row[col]:
                     pref_data = row[col]
                     break
             
-            # If we found a column with comma-separated preferences
+            # If we found a column with preferences
             if pref_data:
-                # Split by comma to get individual preferences
-                preferences = [p.strip() for p in pref_data.split(',') if p.strip()]
+                # Use regex to find all INDENG course patterns
+                # This pattern looks for INDENG followed by course info up to the next INDENG
+                preferences = re.findall(r'INDENG\s+[^,]*(?:,\s+[^I][^N][^D][^E][^N][^G][^,]*)*', pref_data)
+                
+                # Clean up any trailing commas
+                preferences = [p.strip().rstrip(',').strip() for p in preferences]
                 
                 # Process each preference by its position in the list (rank)
                 for idx, entry in enumerate(preferences):
                     if idx < 4:  # Only count the first 4 preferences
                         # Extract course number (e.g., INDENG 221)
                         match = re.search(r"INDENG\s+([A-Z]?\d+[A-Z]?)", entry)
-                        if match:
-                            catalog = match.group(1)
-                            rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
-                            preference_counts[catalog][rank] += 1
-            else:
-                # Try to handle individual columns for each preference
-                for idx, col in enumerate(df.columns):
-                    if idx < 4 and pd.notna(row[col]) and isinstance(row[col], str) and 'INDENG' in row[col]:
-                        match = re.search(r"INDENG\s+([A-Z]?\d+[A-Z]?)", row[col])
                         if match:
                             catalog = match.group(1)
                             rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
