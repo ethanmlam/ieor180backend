@@ -1,3 +1,50 @@
+# Virtual environment
 .venv/
+venv/
+env/
+ENV/
+
+# Python artifacts
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Large binary files
+*.dylib
+*.dll
+*.jar
+*.pyd
+*.whl
+
+# Large package assets
+*.js.map
+**/numpy/.dylibs/
+**/pyarrow/*.dylib
+**/pydeck/nbextension/static/*.js.map
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db
