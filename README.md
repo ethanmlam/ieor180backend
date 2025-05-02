@@ -3,8 +3,8 @@ title: IEOR 180 Backend
 emoji: 🚀
 colorFrom: blue
 colorTo: indigo
-sdk: docker
-sdk_version: "latest"
+sdk: streamlit
+sdk_version: "1.32.0"
 app_file: app.py
 pinned: false
 ---
