@@ -1,0 +1,8 @@
+python3-dev
+g++
+gcc
+pkg-config
+libatlas-base-dev
+liblapack-dev
+build-essential
+python3-distutils 
