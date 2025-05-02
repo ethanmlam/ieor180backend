@@ -103,10 +103,33 @@ min_preferences = st.sidebar.number_input("Min Preferences (if applicable)", min
 
 # Function to extract year label from filename
 def extract_label_from_filename(filename):
-    match = re.search(r"SP(\d+)", filename.upper())
-    if match:
-        return f"Sp 20{match.group(1)[-2:]}"
+    # Look for Spring semester pattern (e.g., SP24)
+    spring_match = re.search(r"SP(\d+)", filename.upper())
+    if spring_match:
+        year = spring_match.group(1)
+        # Format as "Sp 20XX"
+        return f"Sp 20{year[-2:]}"
+    
+    # Look for Fall semester pattern (e.g., FA24)
+    fall_match = re.search(r"FA(\d+)", filename.upper())
+    if fall_match:
+        year = fall_match.group(1)
+        # Format as "Fa 20XX"
+        return f"Fa 20{year[-2:]}"
+    
     return "Unknown"
+
+# Function to get sort key for chronological ordering of semesters
+def get_semester_sort_key(semester_label):
+    # Extract the year and semester
+    match = re.search(r"(Sp|Fa) 20(\d+)", semester_label)
+    if match:
+        sem_type = match.group(1)
+        year = int(match.group(2))
+        # Spring comes before Fall in the same year, so we multiply year by 2
+        # and add 0 for Spring, 1 for Fall
+        return year * 2 + (0 if sem_type == "Sp" else 1)
+    return 0  # Default value for unknown format
 
 # Function to validate file names for preferences
 def is_valid_preferences_file(filename):
@@ -294,8 +317,8 @@ if uploaded_enrolls and show_enrollment_overview:
             
             # Sort year columns chronologically
             enrollment_cols = sorted(
-                [col for col in merged_df.columns if col.startswith("Enrolled Sp")],
-                key=lambda x: int(x.split()[-1])
+                [col for col in merged_df.columns if col.startswith("Enrolled Sp") or col.startswith("Enrolled Fa")],
+                key=lambda x: get_semester_sort_key(x.replace("Enrolled ", ""))
             )
             merged_df = merged_df[['Catalog Nbr'] + enrollment_cols]
             
@@ -406,7 +429,7 @@ if uploaded_prefs:
                     tidy_df[rank] = 0
             
             # Add total by year columns
-            for label in year_labels:
+            for label in sorted(year_labels, key=get_semester_sort_key):
                 total_col = f"Total {label}"
                 if total_col in merged_prefs_df.columns:
                     tidy_df[total_col] = merged_prefs_df[total_col]
