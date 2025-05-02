@@ -201,25 +201,45 @@ def process_preference_file(uploaded_file, label):
         # Process preferences by rank (focusing on 1st to 4th)
         preference_counts = defaultdict(lambda: defaultdict(int))
         
+        # Debug information
+        debug_info = []
+        
         # Handle different data formats
-        for _, row in df.iterrows():
+        for row_idx, row in df.iterrows():
             # Find columns that might contain preference data
             pref_data = None
+            pref_column = None
             
             # Try to find a column with preferences data
             for col in row.index:
                 if pd.notna(row[col]) and isinstance(row[col], str) and 'INDENG' in row[col]:
                     pref_data = row[col]
+                    pref_column = col
                     break
             
             # If we found a column with preferences
             if pref_data:
-                # Use regex to find all INDENG course patterns
-                # This pattern looks for INDENG followed by course info up to the next INDENG
-                preferences = re.findall(r'INDENG\s+[^,]*(?:,\s+[^I][^N][^D][^E][^N][^G][^,]*)*', pref_data)
+                # Simpler, more robust approach: split by "INDENG" and manually reconstruct
+                parts = re.split(r'(INDENG\s+[A-Z]?\d+[A-Z]?)', pref_data)
                 
-                # Clean up any trailing commas
-                preferences = [p.strip().rstrip(',').strip() for p in preferences]
+                # Reconstruct the preference strings
+                preferences = []
+                for i in range(1, len(parts), 2):
+                    if i < len(parts):
+                        course_code = parts[i]  # This is "INDENG XYZ"
+                        description = ""
+                        if i+1 < len(parts):
+                            description = parts[i+1]  # This is the description part including any commas
+                        preferences.append(course_code + description)
+                
+                # Store debug info for this row
+                row_debug = {
+                    "row_idx": row_idx,
+                    "pref_column": pref_column,
+                    "raw_data": pref_data,
+                    "extracted_preferences": preferences
+                }
+                debug_info.append(row_debug)
                 
                 # Process each preference by its position in the list (rank)
                 for idx, entry in enumerate(preferences):
@@ -233,7 +253,9 @@ def process_preference_file(uploaded_file, label):
         
         # If we didn't find any preferences, return None
         if not preference_counts:
-            st.warning(f"No course preferences found in '{uploaded_file.name}'. Skipping...")
+            # Show debug info if no preferences were found
+            st.error(f"No course preferences found in '{uploaded_file.name}'. Debug info:")
+            st.json(debug_info)
             return None
             
         # Create DataFrame with standardized columns for 1st to 4th preferences
@@ -257,7 +279,8 @@ def process_preference_file(uploaded_file, label):
         return pref_df.reset_index()
         
     except Exception as e:
-        st.error(f"Error processing preference file '{uploaded_file.name}': {str(e)}")
+        error_trace = traceback.format_exc()
+        st.error(f"Error processing preference file '{uploaded_file.name}': {str(e)}\n{error_trace}")
         return None
 
 # Function to validate data files and provide helpful error messages
