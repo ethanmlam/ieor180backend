@@ -396,6 +396,10 @@ if uploaded_enrolls and show_enrollment_overview:
             # Use custom sort function for Catalog Nbr
             sorted_courses = sort_course_numbers(plot_data['Catalog Nbr'].unique())
             
+            # Calculate maximum enrollment value for y-axis range
+            max_enrollment = plot_data['Enrollment'].max()
+            y_max = max_enrollment * 1.1  # Add 10% buffer for better visibility
+            
             # Create interactive bar chart with Plotly
             fig = px.bar(
                 plot_data, 
@@ -419,8 +423,7 @@ if uploaded_enrolls and show_enrollment_overview:
                     tickvals=sorted_courses
                 ),
                 yaxis=dict(
-                    rangemode='tozero',
-                    autorange=True
+                    range=[0, y_max]  # Set explicit range from 0 to calculated maximum
                 )
             )
             
