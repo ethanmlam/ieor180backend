@@ -1,3 +1,6 @@
+import os
+os.environ["STREAMLIT_HOME"] = "/tmp"
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,8 +20,8 @@ st.title("Masters of Analytics: Enrollment & Preferences Explorer")
 if 'demo_loaded' not in st.session_state:
     st.session_state.demo_loaded = False
 
-# Function to create sample data files for demo
-def create_sample_data():
+# Function to create sample data files for download
+def get_sample_data():
     # Sample enrollment data
     enrollment_data = """Subject,Catalog Nbr,Section
 INDENG,221,1
@@ -52,16 +55,8 @@ INDENG,C253,1"""
 2022-01-23,student9@example.com,"INDENG C253 Supply Chain and Logistics Management, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 221 Introduction to Financial Engineering"
 2022-01-24,student10@example.com,"INDENG 242B Machine Learning and Data Analytics II, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG C253 Supply Chain and Logistics Management"
 """
-
-    # Create enrollment file with SP22 in name for year detection
-    enrollment_file = io.BytesIO(enrollment_data.encode('utf-8'))
-    enrollment_file.name = "Enrollment_SP22.csv"
     
-    # Create preferences file with SP22 in name for year detection
-    preferences_file = io.BytesIO(preferences_data.encode('utf-8'))
-    preferences_file.name = "Form Responses SP22.csv"
-    
-    return enrollment_file, preferences_file
+    return enrollment_data, preferences_data
 
 # Add info button explaining data formats
 with st.expander("ℹ️ Data Format Information"):
@@ -356,7 +351,8 @@ if uploaded_enrolls and show_enrollment_overview:
                 xaxis_title="Course Number",
                 yaxis_title="Enrollment Count",
                 legend_title="Year",
-                barmode='group'
+                barmode='group',
+                xaxis={'type': 'category', 'categoryorder': 'category ascending'}
             )
             
             st.plotly_chart(fig, use_container_width=True)
@@ -474,7 +470,8 @@ if uploaded_prefs:
                     yaxis_title="Number of Preferences",
                     legend_title="Preference Rank",
                     barmode='stack',
-                    hovermode='closest'
+                    hovermode='closest',
+                    xaxis={'type': 'category', 'categoryorder': 'total descending'}
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
@@ -489,23 +486,35 @@ if uploaded_prefs:
         st.exception(e)
         st.info("Make sure your preferences files match the expected format shown in the information section.")
 
-# Load demo data at the top level if flagged in session state
-if st.session_state.demo_loaded and not (uploaded_enrolls or uploaded_prefs):
-    demo_enrollment, demo_preferences = create_sample_data()
-    uploaded_enrolls = [demo_enrollment]
-    uploaded_prefs = [demo_preferences]
-    st.info("Using demo data. Upload your own files to replace the demo data.")
-    # Add a button to clear demo data
-    if st.button("Clear Demo Data"):
-        st.session_state.demo_loaded = False
-        st.rerun()
-
-# Show the demo button only when no data is loaded
-if not uploaded_enrolls and not uploaded_prefs and not st.session_state.demo_loaded:
+# If no data is uploaded, show a welcome message and sample data download options
+if not uploaded_enrolls and not uploaded_prefs:
     st.info("Please upload Enrollment and/or Preferences CSV files to get started.")
     
-    # Add a sample demo button with direct functionality
-    if st.button("Load Sample Data (Demo)"):
-        st.session_state.demo_loaded = True
-        st.success("Demo data loaded!")
-        st.rerun()
+    # Add sample data download section
+    st.subheader("🧪 Sample Data Files")
+    st.write("Download these sample files to test the functionality of the app:")
+    
+    # Get sample data
+    sample_enrollment, sample_preferences = get_sample_data()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Create download button for sample enrollment data
+        enrollment_buffer = io.BytesIO(sample_enrollment.encode())
+        st.download_button(
+            label="Download Sample Enrollment Data",
+            data=enrollment_buffer,
+            file_name="Enrollment_SP22.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        # Create download button for sample preferences data
+        preferences_buffer = io.BytesIO(sample_preferences.encode())
+        st.download_button(
+            label="Download Sample Preferences Data",
+            data=preferences_buffer,
+            file_name="Form Responses SP22.csv",
+            mime="text/csv"
+        )
