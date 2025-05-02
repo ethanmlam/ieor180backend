@@ -84,9 +84,9 @@ with st.expander("ℹ️ Data Format Information"):
     Each row represents one enrolled student. The app will count them to determine total enrollment per course.
     """)
 
-# Add demo files section toggle as the first item in sidebar
+# Add demo files section toggle in sidebar
 st.sidebar.header("Demo Files")
-show_demo_files = st.sidebar.checkbox("Show Demo Files Section", value=True)
+show_demo_files = st.sidebar.checkbox("Show Demo Files Section", value=False)
 
 # Sidebar for display options
 st.sidebar.header("Display Options")
@@ -97,6 +97,7 @@ show_enrollment_overview = st.sidebar.checkbox("Show Enrollment Data Overview", 
 show_merged_preferences = st.sidebar.checkbox("Show Merged Preferences Table", value=True)
 show_preference_chart = st.sidebar.checkbox("Show Preference Chart", value=True)
 
+
 # Add download option for processed data
 st.sidebar.header("Download Options")
 download_format = st.sidebar.selectbox("Select Format", ["CSV", "Excel"], index=0)
@@ -105,6 +106,26 @@ download_format = st.sidebar.selectbox("Select Format", ["CSV", "Excel"], index=
 st.sidebar.header("Filter Options")
 min_enrollment = st.sidebar.number_input("Min Enrollment (if applicable)", min_value=0, value=0)
 min_preferences = st.sidebar.number_input("Min Preferences (if applicable)", min_value=0, value=0)
+
+# Function to sort course numbers with numeric courses first, then alphanumeric
+def sort_course_numbers(course_list):
+    # Separate numeric and alphanumeric courses
+    numeric_courses = []
+    alphanumeric_courses = []
+    
+    for course in course_list:
+        # Check if the course number is purely numeric
+        if course.isdigit():
+            numeric_courses.append(course)
+        else:
+            alphanumeric_courses.append(course)
+    
+    # Sort each group separately
+    numeric_courses.sort(key=int)  # Sort numeric courses as integers
+    alphanumeric_courses.sort()    # Sort alphanumeric courses regularly
+    
+    # Return numeric courses first, then alphanumeric
+    return numeric_courses + alphanumeric_courses
 
 # Function to extract year label from filename
 def extract_label_from_filename(filename):
@@ -253,30 +274,6 @@ def process_preference_file(uploaded_file, label):
         st.error(f"Error processing preference file '{uploaded_file.name}': {str(e)}")
         return None
 
-# Demo Files Section (conditionally displayed)
-if show_demo_files:
-    st.subheader("Demo Files")
-    
-    demo_col1, demo_col2 = st.columns(2)
-    
-    with demo_col1:
-        enrollment_data, _ = create_sample_data()
-        st.download_button(
-            label="Download Enrollment Example",
-            data=enrollment_data,
-            file_name="Example_Enrollment_SP22.csv",
-            mime="text/csv"
-        )
-        
-    with demo_col2:
-        _, preferences_data = create_sample_data()
-        st.download_button(
-            label="Download Preferences Example",
-            data=preferences_data,
-            file_name="Example Form Responses SP22.csv",
-            mime="text/csv"
-        )
-
 # Upload multiple enrollment and preferences CSVs
 col1, col2 = st.columns(2)
 with col1:
@@ -302,6 +299,30 @@ with col2:
             st.error(f"The following files are not valid preference files and will be ignored: {', '.join(invalid_files)}")
             # Filter out invalid files
             uploaded_prefs = [f for f in uploaded_prefs if is_valid_preferences_file(f.name)]
+
+# Demo Files Section (conditionally displayed)
+if show_demo_files:
+    st.subheader("Demo Files")
+    
+    demo_col1, demo_col2 = st.columns(2)
+    
+    with demo_col1:
+        enrollment_data, _ = create_sample_data()
+        st.download_button(
+            label="Download Enrollment Example",
+            data=enrollment_data,
+            file_name="Example_Enrollment_SP22.csv",
+            mime="text/csv"
+        )
+        
+    with demo_col2:
+        _, preferences_data = create_sample_data()
+        st.download_button(
+            label="Download Preferences Example",
+            data=preferences_data,
+            file_name="Example Form Responses SP22.csv",
+            mime="text/csv"
+        )
 
 if uploaded_enrolls and show_enrollment_overview:
     st.subheader("📊 Enrollment Data Overview")
@@ -372,6 +393,9 @@ if uploaded_enrolls and show_enrollment_overview:
                 value_name='Enrollment'
             )
             
+            # Use custom sort function for Catalog Nbr
+            sorted_courses = sort_course_numbers(plot_data['Catalog Nbr'].unique())
+            
             # Create interactive bar chart with Plotly
             fig = px.bar(
                 plot_data, 
@@ -381,7 +405,7 @@ if uploaded_enrolls and show_enrollment_overview:
                 title="Enrollment Trends by Course and Year",
                 labels={'Catalog Nbr': 'Course Number', 'Enrollment': 'Enrollment Count'},
                 hover_data=['Catalog Nbr', 'Year', 'Enrollment'],
-                category_orders={"Catalog Nbr": sorted(plot_data['Catalog Nbr'].unique())}
+                category_orders={"Catalog Nbr": sorted_courses}
             )
             
             fig.update_layout(
@@ -392,7 +416,7 @@ if uploaded_enrolls and show_enrollment_overview:
                 xaxis=dict(
                     type='category',
                     tickmode='array',
-                    tickvals=sorted(plot_data['Catalog Nbr'].unique())
+                    tickvals=sorted_courses
                 )
             )
             
@@ -518,15 +542,20 @@ if uploaded_prefs:
                 # Prepare data for plotting with Plotly
                 plot_data = tidy_df.copy()
                 
-                # Create a Plotly figure for stacked bar chart
+                # Sort courses using custom function (numeric first, then alphanumeric)
+                sorted_courses = sort_course_numbers(plot_data['Course'].unique())
+                plot_data['Course'] = pd.Categorical(plot_data['Course'], categories=sorted_courses, ordered=True)
+                plot_data = plot_data.sort_values('Course')
+                
+                # Create a Plotly figure for stacked bar chart with vertical bars
                 fig = go.Figure()
                 
                 # Add each preference rank as a separate bar in the stack
                 for rank, color in zip(standard_ranks, 
                                       ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']):
                     fig.add_trace(go.Bar(
-                        x=plot_data['Course'],
-                        y=plot_data[rank],
+                        x=plot_data['Course'],  # Use x for Course for vertical bars
+                        y=plot_data[rank],      # Use y for values for vertical bars
                         name=rank,
                         marker_color=color,
                         hovertemplate='Course: %{x}<br>' +
@@ -544,7 +573,8 @@ if uploaded_prefs:
                     xaxis=dict(
                         type='category',
                         tickmode='array',
-                        tickvals=plot_data['Course'].tolist()
+                        tickvals=sorted_courses,
+                        tickangle=-45  # Angle the course labels for better readability
                     )
                 )
                 
