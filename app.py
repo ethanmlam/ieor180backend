@@ -417,6 +417,10 @@ if uploaded_enrolls and show_enrollment_overview:
                     type='category',
                     tickmode='array',
                     tickvals=sorted_courses
+                ),
+                yaxis=dict(
+                    rangemode='tozero',
+                    autorange=True
                 )
             )
             
