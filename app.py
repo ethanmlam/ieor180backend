@@ -58,6 +58,10 @@ INDENG,C253,1"""
 # Add info button explaining data formats
 with st.expander("ℹ️ Data Format Information"):
     st.markdown("""
+    ### CSV Upload Requirements
+    - Enrollment files must contain 'Enrollment' and SemesterYear (ie FA25, SP24) in the filename
+    - Preferences files must contain 'Form Responses' and SemesterYear (ie FA25, SP24) in the filename
+    
     ### Expected Data Formats
     
     #### Preferences CSV Format
@@ -80,6 +84,10 @@ with st.expander("ℹ️ Data Format Information"):
     Each row represents one enrolled student. The app will count them to determine total enrollment per course.
     """)
 
+# Add demo files section toggle in sidebar
+st.sidebar.header("Demo Files")
+show_demo_files = st.sidebar.checkbox("Show Demo Files Section", value=False)
+
 # Sidebar for display options
 st.sidebar.header("Display Options")
 show_processing_tables = st.sidebar.checkbox("Show Processing Tables", value=False)
@@ -89,9 +97,6 @@ show_enrollment_overview = st.sidebar.checkbox("Show Enrollment Data Overview", 
 show_merged_preferences = st.sidebar.checkbox("Show Merged Preferences Table", value=True)
 show_preference_chart = st.sidebar.checkbox("Show Preference Chart", value=True)
 
-# Add demo files section toggle in sidebar
-st.sidebar.header("Demo Files")
-show_demo_files = st.sidebar.checkbox("Show Demo Files Section", value=False)
 
 # Add download option for processed data
 st.sidebar.header("Download Options")
@@ -104,9 +109,16 @@ min_preferences = st.sidebar.number_input("Min Preferences (if applicable)", min
 
 # Function to extract year label from filename
 def extract_label_from_filename(filename):
-    match = re.search(r"SP(\d+)", filename.upper())
-    if match:
-        return f"Sp 20{match.group(1)[-2:]}"
+    # Check for Spring semester (SP)
+    sp_match = re.search(r"SP(\d+)", filename.upper())
+    if sp_match:
+        return f"Sp 20{sp_match.group(1)[-2:]}"
+    
+    # Check for Fall semester (FA)
+    fa_match = re.search(r"FA(\d+)", filename.upper())
+    if fa_match:
+        return f"Fa 20{fa_match.group(1)[-2:]}"
+    
     return "Unknown"
 
 # Function to validate file names for preferences
@@ -180,29 +192,25 @@ def process_preference_file(uploaded_file, label):
         
         # Handle different data formats
         for _, row in df.iterrows():
-            # Find columns that might contain preference data
-            pref_data = None
+            # Find a column that might contain preference data
+            pref_text = None
             
-            # Try to find a column with comma-separated preferences
+            # Look through all columns for one containing INDENG course info
             for col in row.index:
-                if pd.notna(row[col]) and isinstance(row[col], str) and ',' in row[col] and 'INDENG' in row[col]:
-                    pref_data = row[col]
+                if pd.notna(row[col]) and isinstance(row[col], str) and 'INDENG' in row[col]:
+                    pref_text = row[col]
                     break
             
-            # If we found a column with comma-separated preferences
-            if pref_data:
-                # Split by comma to get individual preferences
-                preferences = [p.strip() for p in pref_data.split(',') if p.strip()]
+            # If we found a column with preference data
+            if pref_text:
+                # Find all INDENG course numbers in the text
+                course_numbers = re.findall(r'INDENG\s+([A-Z]?\d+[A-Z]?)', pref_text)
                 
                 # Process each preference by its position in the list (rank)
-                for idx, entry in enumerate(preferences):
+                for idx, catalog in enumerate(course_numbers):
                     if idx < 4:  # Only count the first 4 preferences
-                        # Extract course number (e.g., INDENG 221)
-                        match = re.search(r"INDENG\s+([A-Z]?\d+[A-Z]?)", entry)
-                        if match:
-                            catalog = match.group(1)
-                            rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
-                            preference_counts[catalog][rank] += 1
+                        rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
+                        preference_counts[catalog][rank] += 1
             else:
                 # Try to handle individual columns for each preference
                 for idx, col in enumerate(df.columns):
@@ -232,8 +240,12 @@ def process_preference_file(uploaded_file, label):
         pref_df = pref_df.astype(int)
         pref_df["Total"] = pref_df.sum(axis=1)
         
-        # Add year label only to the total column
-        pref_df = pref_df.rename(columns={"Total": f"Total {label}"})
+        # Add year label to every column to identify the source year
+        labeled_columns = {}
+        for col in pref_df.columns:
+            labeled_columns[col] = f"{col} {label}"
+        pref_df = pref_df.rename(columns=labeled_columns)
+        
         pref_df.index.name = 'Course'
         
         return pref_df.reset_index()
@@ -245,7 +257,7 @@ def process_preference_file(uploaded_file, label):
 # Upload multiple enrollment and preferences CSVs
 col1, col2 = st.columns(2)
 with col1:
-    uploaded_enrolls = st.file_uploader("Upload Enrollment CSV(s) - Must contain 'Enrollment' in filename", 
+    uploaded_enrolls = st.file_uploader("Upload Enrollment CSV(s)", 
                                        type="csv", key="enroll", accept_multiple_files=True)
     
     # Check if any uploaded files don't match the required format
@@ -257,7 +269,7 @@ with col1:
             uploaded_enrolls = [f for f in uploaded_enrolls if is_valid_enrollment_file(f.name)]
             
 with col2:
-    uploaded_prefs = st.file_uploader("Upload Preferences CSV(s) - Must contain 'Form Responses' in filename", 
+    uploaded_prefs = st.file_uploader("Upload Preferences CSV(s)", 
                                      type=["csv"], key="prefs", accept_multiple_files=True)
     
     # Check if any uploaded files don't match the required format
@@ -413,6 +425,10 @@ if uploaded_prefs:
         
         # Merge all preference DataFrames
         if all_preference_dfs:
+            # Simple year filter
+            year_filter_options = ["All Years"] + sorted(year_labels)
+            selected_year_option = st.selectbox("Filter by Year:", year_filter_options)
+            
             # Merge the preference dataframes on 'Course' column
             merged_prefs_df = reduce(lambda left, right: pd.merge(left, right, on='Course', how='outer'), all_preference_dfs)
             merged_prefs_df = merged_prefs_df.fillna(0)
@@ -423,26 +439,51 @@ if uploaded_prefs:
                     merged_prefs_df[col] = merged_prefs_df[col].astype(int)
             
             # Create a custom tidy dataframe for display
-            # Start with a copy of the Course column
             tidy_df = pd.DataFrame({'Course': merged_prefs_df['Course']})
             
-            # Add preference rank columns (1st, 2nd, 3rd, 4th) with summed values across years
-            for rank in ['1st', '2nd', '3rd', '4th']:
-                # Sum all columns containing this rank
-                rank_cols = [col for col in merged_prefs_df.columns if rank in col]
-                if rank_cols:
-                    tidy_df[rank] = merged_prefs_df[rank_cols].sum(axis=1)
-                else:
-                    tidy_df[rank] = 0
+            # Get the standard rank labels
+            standard_ranks = ['1st', '2nd', '3rd', '4th']
             
-            # Add total by year columns
-            for label in year_labels:
-                total_col = f"Total {label}"
-                if total_col in merged_prefs_df.columns:
-                    tidy_df[total_col] = merged_prefs_df[total_col]
+            # Add columns based on filter selection
+            if selected_year_option == "All Years":
+                # For each standard rank, sum all columns from all years
+                for rank in standard_ranks:
+                    # Find all columns for this rank across all years
+                    rank_cols = [col for col in merged_prefs_df.columns if rank in col]
+                    if rank_cols:
+                        tidy_df[rank] = merged_prefs_df[rank_cols].sum(axis=1)
+                    else:
+                        tidy_df[rank] = 0
+                
+                # Add total columns for each year
+                for year in year_labels:
+                    total_col = f"Total {year}"
+                    if any(total_col in col for col in merged_prefs_df.columns):
+                        # Find the exact column name
+                        matching_col = [col for col in merged_prefs_df.columns if total_col in col]
+                        if matching_col:
+                            tidy_df[total_col] = merged_prefs_df[matching_col[0]]
+            else:
+                # Only include columns for the selected year
+                for rank in standard_ranks:
+                    # Find rank columns for this specific year 
+                    rank_col = f"{rank} {selected_year_option}"
+                    matching_cols = [col for col in merged_prefs_df.columns if rank_col in col]
+                    
+                    if matching_cols:
+                        # Use the original rank name in the output dataframe
+                        tidy_df[rank] = merged_prefs_df[matching_cols[0]]
+                    else:
+                        tidy_df[rank] = 0
+                
+                # Add total for the selected year
+                total_col = f"Total {selected_year_option}"
+                matching_total = [col for col in merged_prefs_df.columns if total_col in col]
+                if matching_total:
+                    tidy_df[total_col] = merged_prefs_df[matching_total[0]]
             
             # Add Grand Total column
-            tidy_df["Grand Total"] = tidy_df[['1st', '2nd', '3rd', '4th']].sum(axis=1)
+            tidy_df["Grand Total"] = tidy_df[standard_ranks].sum(axis=1)
             
             # Sort by Grand Total descending
             tidy_df = tidy_df.sort_values("Grand Total", ascending=False)
@@ -452,7 +493,7 @@ if uploaded_prefs:
                 tidy_df = tidy_df[tidy_df["Grand Total"] >= min_preferences]
             
             if show_merged_preferences:
-                st.write("Preferences Summary by Course (Across All Years):")
+                st.write(f"Preferences Summary by Course ({selected_year_option}):")
                 st.dataframe(tidy_df)
                 
                 # Add download button for preferences data
@@ -482,7 +523,7 @@ if uploaded_prefs:
                 fig = go.Figure()
                 
                 # Add each preference rank as a separate bar in the stack
-                for rank, color in zip(['1st', '2nd', '3rd', '4th'], 
+                for rank, color in zip(standard_ranks, 
                                       ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']):
                     fig.add_trace(go.Bar(
                         x=plot_data['Course'],
@@ -495,7 +536,7 @@ if uploaded_prefs:
                     ))
                 
                 fig.update_layout(
-                    title="Preference Distribution by Course",
+                    title=f"Preference Distribution by Course ({selected_year_option})",
                     xaxis_title="Course",
                     yaxis_title="Number of Preferences",
                     legend_title="Preference Rank",
