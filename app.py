@@ -2,6 +2,7 @@ import os
 os.environ["STREAMLIT_HOME"] = "/tmp"
 
 import streamlit as st
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -12,17 +13,12 @@ from collections import defaultdict
 import plotly.express as px
 import plotly.graph_objects as go
 import base64
-import traceback
 
 st.set_page_config(layout="wide")
 st.title("Masters of Analytics: Enrollment & Preferences Explorer")
 
-# Initialize session state for demo files if not already present
-if 'demo_loaded' not in st.session_state:
-    st.session_state.demo_loaded = False
-
-# Function to create sample data files for download
-def get_sample_data():
+# Function to create sample data files for demo
+def create_sample_data():
     # Sample enrollment data
     enrollment_data = """Subject,Catalog Nbr,Section
 INDENG,221,1
@@ -44,19 +40,19 @@ INDENG,C253,1
 INDENG,C253,1"""
 
     # Sample preferences data
-    preferences_data = """Timestamp,Email Address,Preferences
-2022-01-15,student1@example.com,"INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 242B Machine Learning and Data Analytics II, INDENG C253 Supply Chain and Logistics Management"
-2022-01-16,student2@example.com,"INDENG 221 Introduction to Financial Engineering, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 242B Machine Learning and Data Analytics II"
-2022-01-17,student3@example.com,"INDENG 242B Machine Learning and Data Analytics II, INDENG 221 Introduction to Financial Engineering, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation"
-2022-01-18,student4@example.com,"INDENG C253 Supply Chain and Logistics Management, INDENG 242B Machine Learning and Data Analytics II, INDENG 221 Introduction to Financial Engineering"
-2022-01-19,student5@example.com,"INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG C253 Supply Chain and Logistics Management, INDENG 221 Introduction to Financial Engineering"
-2022-01-20,student6@example.com,"INDENG 242B Machine Learning and Data Analytics II, INDENG C253 Supply Chain and Logistics Management, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation"
-2022-01-21,student7@example.com,"INDENG 221 Introduction to Financial Engineering, INDENG 242B Machine Learning and Data Analytics II, INDENG C253 Supply Chain and Logistics Management"
-2022-01-22,student8@example.com,"INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 221 Introduction to Financial Engineering, INDENG 242B Machine Learning and Data Analytics II"
-2022-01-23,student9@example.com,"INDENG C253 Supply Chain and Logistics Management, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 221 Introduction to Financial Engineering"
-2022-01-24,student10@example.com,"INDENG 242B Machine Learning and Data Analytics II, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG C253 Supply Chain and Logistics Management"
+    preferences_data = """Preferences
+"INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 242B Machine Learning and Data Analytics II, INDENG C253 Supply Chain and Logistics Management"
+"INDENG 221 Introduction to Financial Engineering, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 242B Machine Learning and Data Analytics II"
+"INDENG 242B Machine Learning and Data Analytics II, INDENG 221 Introduction to Financial Engineering, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation"
+"INDENG C253 Supply Chain and Logistics Management, INDENG 242B Machine Learning and Data Analytics II, INDENG 221 Introduction to Financial Engineering"
+"INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG C253 Supply Chain and Logistics Management, INDENG 221 Introduction to Financial Engineering"
+"INDENG 242B Machine Learning and Data Analytics II, INDENG C253 Supply Chain and Logistics Management, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation"
+"INDENG 221 Introduction to Financial Engineering, INDENG 242B Machine Learning and Data Analytics II, INDENG C253 Supply Chain and Logistics Management"
+"INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 221 Introduction to Financial Engineering, INDENG 242B Machine Learning and Data Analytics II"
+"INDENG C253 Supply Chain and Logistics Management, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG 221 Introduction to Financial Engineering"
+"INDENG 242B Machine Learning and Data Analytics II, INDENG 231 Introduction to Data Modeling, Statistics, and System Simulation, INDENG C253 Supply Chain and Logistics Management"
 """
-    
+
     return enrollment_data, preferences_data
 
 # Add info button explaining data formats
@@ -93,6 +89,10 @@ show_enrollment_overview = st.sidebar.checkbox("Show Enrollment Data Overview", 
 show_merged_preferences = st.sidebar.checkbox("Show Merged Preferences Table", value=True)
 show_preference_chart = st.sidebar.checkbox("Show Preference Chart", value=True)
 
+# Add demo files section toggle in sidebar
+st.sidebar.header("Demo Files")
+show_demo_files = st.sidebar.checkbox("Show Demo Files Section", value=False)
+
 # Add download option for processed data
 st.sidebar.header("Download Options")
 download_format = st.sidebar.selectbox("Select Format", ["CSV", "Excel"], index=0)
@@ -104,33 +104,10 @@ min_preferences = st.sidebar.number_input("Min Preferences (if applicable)", min
 
 # Function to extract year label from filename
 def extract_label_from_filename(filename):
-    # Look for Spring semester pattern (e.g., SP24)
-    spring_match = re.search(r"SP(\d+)", filename.upper())
-    if spring_match:
-        year = spring_match.group(1)
-        # Format as "Sp 20XX"
-        return f"Sp 20{year[-2:]}"
-    
-    # Look for Fall semester pattern (e.g., FA24)
-    fall_match = re.search(r"FA(\d+)", filename.upper())
-    if fall_match:
-        year = fall_match.group(1)
-        # Format as "Fa 20XX"
-        return f"Fa 20{year[-2:]}"
-    
-    return "Unknown"
-
-# Function to get sort key for chronological ordering of semesters
-def get_semester_sort_key(semester_label):
-    # Extract the year and semester
-    match = re.search(r"(Sp|Fa) 20(\d+)", semester_label)
+    match = re.search(r"SP(\d+)", filename.upper())
     if match:
-        sem_type = match.group(1)
-        year = int(match.group(2))
-        # Spring comes before Fall in the same year, so we multiply year by 2
-        # and add 0 for Spring, 1 for Fall
-        return year * 2 + (0 if sem_type == "Sp" else 1)
-    return 0  # Default value for unknown format
+        return f"Sp 20{match.group(1)[-2:]}"
+    return "Unknown"
 
 # Function to validate file names for preferences
 def is_valid_preferences_file(filename):
@@ -170,7 +147,7 @@ def is_valid_csv(file):
     # Check if there's any content or at least a header
     return len(sample.strip()) > 0 and b',' in sample
 
-# Function to process preferences files by splitting on INDENG patterns rather than commas
+# Function to process preferences files by splitting comma-separated entries
 def process_preference_file(uploaded_file, label):
     try:
         # Check if the file is empty
@@ -201,45 +178,21 @@ def process_preference_file(uploaded_file, label):
         # Process preferences by rank (focusing on 1st to 4th)
         preference_counts = defaultdict(lambda: defaultdict(int))
         
-        # Debug information
-        debug_info = []
-        
         # Handle different data formats
-        for row_idx, row in df.iterrows():
+        for _, row in df.iterrows():
             # Find columns that might contain preference data
             pref_data = None
-            pref_column = None
             
-            # Try to find a column with preferences data
+            # Try to find a column with comma-separated preferences
             for col in row.index:
-                if pd.notna(row[col]) and isinstance(row[col], str) and 'INDENG' in row[col]:
+                if pd.notna(row[col]) and isinstance(row[col], str) and ',' in row[col] and 'INDENG' in row[col]:
                     pref_data = row[col]
-                    pref_column = col
                     break
             
-            # If we found a column with preferences
+            # If we found a column with comma-separated preferences
             if pref_data:
-                # Simpler, more robust approach: split by "INDENG" and manually reconstruct
-                parts = re.split(r'(INDENG\s+[A-Z]?\d+[A-Z]?)', pref_data)
-                
-                # Reconstruct the preference strings
-                preferences = []
-                for i in range(1, len(parts), 2):
-                    if i < len(parts):
-                        course_code = parts[i]  # This is "INDENG XYZ"
-                        description = ""
-                        if i+1 < len(parts):
-                            description = parts[i+1]  # This is the description part including any commas
-                        preferences.append(course_code + description)
-                
-                # Store debug info for this row
-                row_debug = {
-                    "row_idx": row_idx,
-                    "pref_column": pref_column,
-                    "raw_data": pref_data,
-                    "extracted_preferences": preferences
-                }
-                debug_info.append(row_debug)
+                # Split by comma to get individual preferences
+                preferences = [p.strip() for p in pref_data.split(',') if p.strip()]
                 
                 # Process each preference by its position in the list (rank)
                 for idx, entry in enumerate(preferences):
@@ -250,12 +203,19 @@ def process_preference_file(uploaded_file, label):
                             catalog = match.group(1)
                             rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
                             preference_counts[catalog][rank] += 1
+            else:
+                # Try to handle individual columns for each preference
+                for idx, col in enumerate(df.columns):
+                    if idx < 4 and pd.notna(row[col]) and isinstance(row[col], str) and 'INDENG' in row[col]:
+                        match = re.search(r"INDENG\s+([A-Z]?\d+[A-Z]?)", row[col])
+                        if match:
+                            catalog = match.group(1)
+                            rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
+                            preference_counts[catalog][rank] += 1
         
         # If we didn't find any preferences, return None
         if not preference_counts:
-            # Show debug info if no preferences were found
-            st.error(f"No course preferences found in '{uploaded_file.name}'. Debug info:")
-            st.json(debug_info)
+            st.warning(f"No course preferences found in '{uploaded_file.name}'. Skipping...")
             return None
             
         # Create DataFrame with standardized columns for 1st to 4th preferences
@@ -279,165 +239,59 @@ def process_preference_file(uploaded_file, label):
         return pref_df.reset_index()
         
     except Exception as e:
-        error_trace = traceback.format_exc()
-        st.error(f"Error processing preference file '{uploaded_file.name}': {str(e)}\n{error_trace}")
+        st.error(f"Error processing preference file '{uploaded_file.name}': {str(e)}")
         return None
 
-# Function to validate data files and provide helpful error messages
-def validate_file_content(uploaded_file, file_type):
-    """Validate file contents and return (is_valid, error_message)"""
-    try:
-        # Reset file pointer
-        uploaded_file.seek(0)
-        
-        # Sample first 10 lines for validation
-        sample_lines = []
-        for i, line in enumerate(uploaded_file):
-            if i >= 10:  # Read up to 10 lines
-                break
-            sample_lines.append(line.decode('utf-8'))
-        
-        # Reset file pointer for later processing
-        uploaded_file.seek(0)
-            
-        # If file is empty
-        if not sample_lines:
-            return False, "File appears to be empty"
-        
-        # Check for enrollment data format
-        if file_type == "enrollment":
-            # Check for header
-            if "Subject" not in sample_lines[0] or "Catalog Nbr" not in sample_lines[0]:
-                return False, "Missing required headers: 'Subject' and/or 'Catalog Nbr'"
-            
-            # Check for INDENG in data rows
-            found_indeng = False
-            for line in sample_lines[1:]:  # Skip header
-                if "INDENG" in line:
-                    found_indeng = True
-                    break
-            
-            if not found_indeng:
-                return False, "No 'INDENG' entries found in data rows"
-                
-            return True, "Enrollment file format appears valid"
-            
-        # Check for preferences data format
-        elif file_type == "preferences":
-            # Look for preferences column or data
-            found_preferences = False
-            for line in sample_lines:
-                if "INDENG" in line:
-                    found_preferences = True
-                    break
-            
-            if not found_preferences:
-                return False, "No 'INDENG' entries found in file. Preferences should contain INDENG course codes."
-            
-            # Check for multiple preferences per row (comma-separated list)
-            multiple_prefs = False
-            for line in sample_lines:
-                if "INDENG" in line and line.count("INDENG") > 1:
-                    multiple_prefs = True
-                    break
-                    
-            if not multiple_prefs:
-                return False, "Warning: No rows with multiple INDENG entries found. Preferences should contain multiple course selections."
-            
-            return True, "Preferences file format appears valid"
-    
-    except Exception as e:
-        error_trace = traceback.format_exc()
-        return False, f"Error validating file: {str(e)}\n{error_trace}"
-        
-    return True, "File format looks good"
-
-# Upload and validate multiple enrollment and preferences CSVs
+# Upload multiple enrollment and preferences CSVs
 col1, col2 = st.columns(2)
 with col1:
     uploaded_enrolls = st.file_uploader("Upload Enrollment CSV(s) - Must contain 'Enrollment' in filename", 
                                        type="csv", key="enroll", accept_multiple_files=True)
     
-    # Validate file names and content
+    # Check if any uploaded files don't match the required format
     if uploaded_enrolls:
-        # Check filenames
         invalid_files = [f.name for f in uploaded_enrolls if not is_valid_enrollment_file(f.name)]
         if invalid_files:
-            st.error(f"The following files do not have 'Enrollment' in the filename and will be ignored: {', '.join(invalid_files)}")
+            st.error(f"The following files are not valid enrollment files and will be ignored: {', '.join(invalid_files)}")
+            # Filter out invalid files
             uploaded_enrolls = [f for f in uploaded_enrolls if is_valid_enrollment_file(f.name)]
-        
-        # Validate content of each file
-        for uploaded_file in uploaded_enrolls:
-            is_valid, message = validate_file_content(uploaded_file, "enrollment")
-            if not is_valid:
-                st.warning(f"⚠️ Warning for '{uploaded_file.name}': {message}")
-            else:
-                st.success(f"✅ '{uploaded_file.name}': {message}")
             
 with col2:
     uploaded_prefs = st.file_uploader("Upload Preferences CSV(s) - Must contain 'Form Responses' in filename", 
                                      type=["csv"], key="prefs", accept_multiple_files=True)
     
-    # Validate file names and content
+    # Check if any uploaded files don't match the required format
     if uploaded_prefs:
-        # Check filenames
         invalid_files = [f.name for f in uploaded_prefs if not is_valid_preferences_file(f.name)]
         if invalid_files:
-            st.error(f"The following files do not have 'Form Responses' in the filename and will be ignored: {', '.join(invalid_files)}")
+            st.error(f"The following files are not valid preference files and will be ignored: {', '.join(invalid_files)}")
+            # Filter out invalid files
             uploaded_prefs = [f for f in uploaded_prefs if is_valid_preferences_file(f.name)]
-        
-        # Validate content of each file
-        for uploaded_file in uploaded_prefs:
-            is_valid, message = validate_file_content(uploaded_file, "preferences")
-            if not is_valid:
-                st.warning(f"⚠️ Warning for '{uploaded_file.name}': {message}")
-            else:
-                st.success(f"✅ '{uploaded_file.name}': {message}")
-                
-# If errors are detected, show help section
-if (uploaded_enrolls and any(not validate_file_content(f, "enrollment")[0] for f in uploaded_enrolls)) or \
-   (uploaded_prefs and any(not validate_file_content(f, "preferences")[0] for f in uploaded_prefs)):
-    st.error("⚠️ Some files have validation errors. Please review the warnings above and check the File Format Help section below.")
-    
-    with st.expander("📋 File Format Help"):
-        st.markdown("""
-        ### Fixing Common File Format Issues
-        
-        #### Enrollment Files
-        
-        Your enrollment file should look like this:
-        ```
-        Subject,Catalog Nbr,Section
-        INDENG,221,1
-        INDENG,221,1
-        INDENG,231,1
-        ```
-        
-        Common issues:
-        1. Missing headers - Make sure the first row has "Subject" and "Catalog Nbr"
-        2. No INDENG entries - Check that your data contains "INDENG" course codes
-        3. Wrong delimiter - Make sure you're using commas to separate values
-        
-        #### Preferences Files
-        
-        Your preferences file should include a column containing entries like:
-        ```
-        "INDENG 221 Introduction to Financial Engineering, INDENG 231 Introduction to Data Modeling, INDENG 242B Machine Learning"
-        ```
-        
-        Common issues:
-        1. No INDENG entries - Check that your data contains "INDENG" course codes
-        2. Single preferences only - Each row should have multiple preferences (multiple "INDENG" entries)
-        3. Wrong delimiter/format - If using Excel, save as CSV before uploading
-        
-        #### Filename Requirements
-        
-        - Enrollment files must contain "Enrollment" in the filename
-        - Preferences files must contain "Form Responses" in the filename
-        - Include semester information like "SP24" or "FA23" in the filename for proper semester labeling
-        """)
 
-# Process files section
+# Demo Files Section (conditionally displayed)
+if show_demo_files:
+    st.subheader("Demo Files")
+    
+    demo_col1, demo_col2 = st.columns(2)
+    
+    with demo_col1:
+        enrollment_data, _ = create_sample_data()
+        st.download_button(
+            label="Download Enrollment Example",
+            data=enrollment_data,
+            file_name="Example_Enrollment_SP22.csv",
+            mime="text/csv"
+        )
+        
+    with demo_col2:
+        _, preferences_data = create_sample_data()
+        st.download_button(
+            label="Download Preferences Example",
+            data=preferences_data,
+            file_name="Example Form Responses SP22.csv",
+            mime="text/csv"
+        )
+
 if uploaded_enrolls and show_enrollment_overview:
     st.subheader("📊 Enrollment Data Overview")
     try:
@@ -465,8 +319,8 @@ if uploaded_enrolls and show_enrollment_overview:
             
             # Sort year columns chronologically
             enrollment_cols = sorted(
-                [col for col in merged_df.columns if col.startswith("Enrolled Sp") or col.startswith("Enrolled Fa")],
-                key=lambda x: get_semester_sort_key(x.replace("Enrolled ", ""))
+                [col for col in merged_df.columns if col.startswith("Enrolled Sp")],
+                key=lambda x: int(x.split()[-1])
             )
             merged_df = merged_df[['Catalog Nbr'] + enrollment_cols]
             
@@ -515,7 +369,8 @@ if uploaded_enrolls and show_enrollment_overview:
                 color='Year',
                 title="Enrollment Trends by Course and Year",
                 labels={'Catalog Nbr': 'Course Number', 'Enrollment': 'Enrollment Count'},
-                hover_data=['Catalog Nbr', 'Year', 'Enrollment']
+                hover_data=['Catalog Nbr', 'Year', 'Enrollment'],
+                category_orders={"Catalog Nbr": sorted(plot_data['Catalog Nbr'].unique())}
             )
             
             fig.update_layout(
@@ -523,7 +378,11 @@ if uploaded_enrolls and show_enrollment_overview:
                 yaxis_title="Enrollment Count",
                 legend_title="Year",
                 barmode='group',
-                xaxis={'type': 'category', 'categoryorder': 'category ascending'}
+                xaxis=dict(
+                    type='category',
+                    tickmode='array',
+                    tickvals=sorted(plot_data['Catalog Nbr'].unique())
+                )
             )
             
             st.plotly_chart(fig, use_container_width=True)
@@ -577,7 +436,7 @@ if uploaded_prefs:
                     tidy_df[rank] = 0
             
             # Add total by year columns
-            for label in sorted(year_labels, key=get_semester_sort_key):
+            for label in year_labels:
                 total_col = f"Total {label}"
                 if total_col in merged_prefs_df.columns:
                     tidy_df[total_col] = merged_prefs_df[total_col]
@@ -642,7 +501,11 @@ if uploaded_prefs:
                     legend_title="Preference Rank",
                     barmode='stack',
                     hovermode='closest',
-                    xaxis={'type': 'category', 'categoryorder': 'total descending'}
+                    xaxis=dict(
+                        type='category',
+                        tickmode='array',
+                        tickvals=plot_data['Course'].tolist()
+                    )
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
@@ -657,35 +520,6 @@ if uploaded_prefs:
         st.exception(e)
         st.info("Make sure your preferences files match the expected format shown in the information section.")
 
-# If no data is uploaded, show a welcome message and sample data download options
+# Remove the demo data loading functionality at the bottom
 if not uploaded_enrolls and not uploaded_prefs:
     st.info("Please upload Enrollment and/or Preferences CSV files to get started.")
-    
-    # Add sample data download section
-    st.subheader("🧪 Sample Data Files")
-    st.write("Download these sample files to test the functionality of the app:")
-    
-    # Get sample data
-    sample_enrollment, sample_preferences = get_sample_data()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Create download button for sample enrollment data
-        enrollment_buffer = io.BytesIO(sample_enrollment.encode())
-        st.download_button(
-            label="Download Sample Enrollment Data",
-            data=enrollment_buffer,
-            file_name="Enrollment_SP22.csv",
-            mime="text/csv"
-        )
-    
-    with col2:
-        # Create download button for sample preferences data
-        preferences_buffer = io.BytesIO(sample_preferences.encode())
-        st.download_button(
-            label="Download Sample Preferences Data",
-            data=preferences_buffer,
-            file_name="Form Responses SP22.csv",
-            mime="text/csv"
-        )
