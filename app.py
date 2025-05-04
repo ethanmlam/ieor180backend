@@ -16,7 +16,17 @@ import base64
 
 st.set_page_config(layout="wide")
 st.title("Masters of Analytics: Enrollment & Preferences Explorer")
-
+hide_spaces_header = """
+    <style>
+    /* Hide Hugging Face top bar */
+    .st-emotion-cache-6qob1r.e1tzin5v2 {
+        display: none !important;
+    }
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+"""
+st.markdown(hide_spaces_header, unsafe_allow_html=True)
 # Function to create sample data files for demo
 def create_sample_data():
     # Sample enrollment data
