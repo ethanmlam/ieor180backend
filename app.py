@@ -99,24 +99,38 @@ with st.expander("ℹ️ Data Format Information"):
 st.sidebar.header("Example Files")
 show_demo_files = st.sidebar.checkbox("Show Example Files Section", value=False)
 
-# Sidebar for display options
-st.sidebar.header("Display Options")
-show_processing_tables = st.sidebar.checkbox("Show Processing Tables", value=False)
-show_merged_enrollment = st.sidebar.checkbox("Show Merged Enrollment Table", value=True)
-show_enrollment_overview = st.sidebar.checkbox("Show Enrollment Data Overview", value=True)
-
-show_merged_preferences = st.sidebar.checkbox("Show Merged Preferences Table", value=True)
-show_preference_chart = st.sidebar.checkbox("Show Preference Chart", value=True)
-
+# Sidebar for display options - convert to expander to save space
+with st.sidebar.expander("Display Options", expanded=False):
+    show_processing_tables = st.checkbox("Show Processing Tables", value=False)
+    show_merged_enrollment = st.checkbox("Show Merged Enrollment Table", value=True)
+    show_enrollment_overview = st.checkbox("Show Enrollment Data Overview", value=True)
+    show_merged_preferences = st.checkbox("Show Merged Preferences Table", value=True)
+    show_preference_chart = st.checkbox("Show Preference Chart", value=True)
 
 # Add download option for processed data
-st.sidebar.header("Download Options")
-download_format = st.sidebar.selectbox("Select Format", ["CSV", "Excel"], index=0)
+with st.sidebar.expander("Download Options", expanded=False):
+    download_format = st.selectbox("Select Format", ["CSV", "Excel"], index=0)
 
-# Add course filter option
+# Filter options - give more prominence with dedicated section
 st.sidebar.header("Filter Options")
-min_enrollment = st.sidebar.number_input("Min Enrollment (if applicable)", min_value=0, value=0)
+min_enrollment = st.sidebar.number_input("Min Enrollment", min_value=0, value=0)
+max_enrollment = st.sidebar.number_input("Max Enrollment", min_value=0, value=0, 
+                                         help="Set to 0 for no maximum limit")
 min_preferences = st.sidebar.number_input("Min Preferences (if applicable)", min_value=0, value=0)
+
+# Create a permanent subject filter with default values
+# We'll use a session state variable to store and update available subjects
+if 'subject_options' not in st.session_state:
+    st.session_state.subject_options = ["All Subjects", "INDENG"]
+    st.session_state.selected_subjects = ["INDENG"]  # Pre-select INDENG by default
+
+# Display the permanent filter
+selected_subjects = st.sidebar.multiselect(
+    "Filter by Subject:",
+    st.session_state.subject_options,
+    default=st.session_state.selected_subjects,
+    help="Select one or more subjects. Use 'All Subjects' to see everything."
+)
 
 # Function to sort course numbers with numeric courses first, then alphanumeric
 def sort_course_numbers(course_list):
@@ -176,95 +190,43 @@ def process_enrollment_file(uploaded_file, label):
             if df[col].dtype == object:  # Only check string columns
                 df = df[~(df[col].astype(str).str.isspace())]
         
-        if 'Catalog Nbr' in df.columns and 'Section' in df.columns:
-            # Filter to only include rows where Section is 1 and Subject is INDENG
+        if 'Catalog Nbr' in df.columns:
+            # No subject filtering - process all courses
+            
+            # Show sample of data
+            with st.expander(f"View sample data from {uploaded_file.name}"):
+                st.dataframe(df.head(5))
+                if 'Subject' in df.columns:
+                    # Just display subjects for information, but don't filter
+                    subject_counts = df['Subject'].value_counts().head(10)
+                    st.info(f"Top subjects (for information only): {', '.join(subject_counts.index.tolist())}")
+            
+            # Include Subject in the groupby if it exists
             if 'Subject' in df.columns:
-                # Filter rows where subject starts with INDENG
-                df = df[df['Subject'].astype(str).str.startswith('INDENG')]
-            # st.dataframe(df.head(100)) 
-            # Display Section column info
-            # st.write("Section column type:", df['Section'].dtype)
-            # st.write("Section column values:", df['Section'].unique())
-
-            # Convert Section column to numeric values if it's string
-            if df['Section'].dtype == object:  # If it's a string/object type
-                # First save original values for debugging
-                original_section_values = df['Section'].copy()
+                # Count occurrences of each Subject + Catalog Nbr combination
+                enrollment_counts = df.groupby(['Subject', 'Catalog Nbr']).size().reset_index(name=f'Enrolled {label}')
                 
-                # Try to convert the Section column to numeric
-                # This will extract just the numeric part if values contain other characters
-                # For example, '1' or 'Section 1' will both become 1
-                df['Section'] = pd.to_numeric(df['Section'].astype(str).str.strip().str.extract(r'(\d+)', expand=False), errors='coerce')
-                
-                # Show the conversion results
-                # st.write("Converted Section values:", df['Section'].unique())
-                # st.write("Any NaN values after conversion:", df['Section'].isna().sum())
-                
-                # Filter out rows where conversion failed
-                df = df.dropna(subset=['Section'])
-                
-                # Now filter for Section = 1
-                df = df[df['Section'] == 1]
+                # Create a combined Subject+CourseNum column for display
+                enrollment_counts['Course_Full'] = enrollment_counts['Subject'] + ' ' + enrollment_counts['Catalog Nbr'].astype(str)
             else:
-                # If it's already numeric, just filter
-                df = df[df['Section'] == 1]
+                # Count occurrences of each course number only
+                enrollment_counts = df.groupby('Catalog Nbr').size().reset_index(name=f'Enrolled {label}')
+                enrollment_counts['Subject'] = 'UNKNOWN'  # Add a placeholder Subject
+                enrollment_counts['Course_Full'] = enrollment_counts['Catalog Nbr'].astype(str)
             
-            df = df.drop(columns=[col for col in ['Subject', 'Unnamed: 3', 'Unnamed: 4'] if col in df.columns], errors='ignore')
-            
-            # Check for empty dataframe after filtering
-            if df.empty:
-                st.warning(f"No valid rows found in {uploaded_file.name} after filtering")
-                
-                # Show the original dataframe content for debugging
-                df_original = pd.read_csv(uploaded_file)
-                st.error("Original dataframe contents:")
-                # st.dataframe(df_original.head(10))  # Show first 10 rows
-                
-                # Show information about the dataframe
-                st.error(f"DataFrame info: {len(df_original)} rows, columns: {', '.join(df_original.columns.tolist())}")
-                
-                # Show unique values for key columns if they exist
-                if 'Subject' in df_original.columns:
-                    st.error(f"Unique Subject values: {df_original['Subject'].unique()}")
-                if 'Section' in df_original.columns:
-                    st.error(f"Unique Section values: {df_original['Section'].unique()}")
-                if 'Catalog Nbr' in df_original.columns:
-                    st.error(f"Sample Catalog Nbr values: {df_original['Catalog Nbr'].unique()[:10]}")
-                
-                st.info("Make sure your file has rows with INDENG subject and Section = 1. Using all rows instead.")
-                
-                # Try again without filtering
-                df = pd.read_csv(uploaded_file)
-                df = df.dropna(how='all')
-            
-            # Make sure Section is numeric before summing
-            if 'Section' in df.columns and df['Section'].dtype == object:
-                df['Section'] = pd.to_numeric(df['Section'], errors='coerce').fillna(1)
-
-            # Now group by and sum - Section should be numeric
-            df = df.groupby('Catalog Nbr').sum(numeric_only=True).rename(columns={'Section': f'Enrolled {label}'})
-            
-            # Verify the renamed column exists
-            if f'Enrolled {label}' in df.columns:
-                df = df[[f'Enrolled {label}']].reset_index()
-                return df
-            else:
-                # If the Section column wasn't numeric or wasn't included in the sum
-                # Count rows instead
-                st.warning(f"Column 'Section' could not be summed in {uploaded_file.name}. Using row count instead.")
-                df = df.groupby('Catalog Nbr').size().reset_index(name=f'Enrolled {label}')
-                return df
+            # Success message
+            st.success(f"Successfully processed {len(df)} rows from {uploaded_file.name}, found {len(enrollment_counts)} unique courses")
+            return enrollment_counts
         else:
             missing_cols = []
             if 'Catalog Nbr' not in df.columns:
                 missing_cols.append('Catalog Nbr')
-            if 'Section' not in df.columns:
-                missing_cols.append('Section')
             st.warning(f"Could not find {', '.join(missing_cols)} column(s) in {uploaded_file.name}")
             st.info(f"Available columns: {', '.join(df.columns.tolist())}")
             return None
     except Exception as e:
         st.error(f"Error reading enrollment file '{uploaded_file.name}': {str(e)}")
+        st.exception(e)  # Show the full exception trace
         return None
 
 # Function to check if a file is empty or has valid data
@@ -443,40 +405,76 @@ if uploaded_enrolls and show_enrollment_overview:
         
         # Merge all enrollment DataFrames
         if all_enrollment_dfs:
-            merged_df = reduce(lambda left, right: pd.merge(left, right, on='Catalog Nbr', how='outer'), all_enrollment_dfs)
+            # Merge on both Subject and Catalog Nbr columns
+            merged_df = reduce(lambda left, right: pd.merge(left, right, on=['Subject', 'Catalog Nbr', 'Course_Full'], how='outer'), all_enrollment_dfs)
             merged_df = merged_df.fillna(0)
             
             # Convert to integers to remove decimal points
             for col in merged_df.columns:
-                if col != 'Catalog Nbr':
+                if col not in ['Subject', 'Catalog Nbr', 'Course_Full']:
                     merged_df[col] = merged_df[col].astype(int)
+            
+            # Get unique subjects for the filter and update session state
+            unique_subjects = sorted(merged_df['Subject'].unique())
+            
+            # Update the options in session state
+            st.session_state.subject_options = ["All Subjects"] + unique_subjects
+            
+            # Make sure selected_subjects contains valid choices
+            if not any(subj in st.session_state.subject_options for subj in selected_subjects):
+                # If no valid subjects selected, prioritize selecting INDENG if available
+                if "INDENG" in unique_subjects:
+                    st.session_state.selected_subjects = ["INDENG"]
+                else:
+                    # Default to "All Subjects" if INDENG is not available
+                    st.session_state.selected_subjects = ["All Subjects"]
+            else:
+                # Store current selection in session state for persistence
+                st.session_state.selected_subjects = selected_subjects
+            
+            # Apply subject filter if specific subjects are selected
+            filtered_df = merged_df.copy()
+            if selected_subjects and "All Subjects" not in selected_subjects:
+                filtered_df = merged_df[merged_df['Subject'].isin(selected_subjects)]
+                st.info(f"Filtering to show only: {', '.join(selected_subjects)}")
             
             # Sort year columns chronologically
             enrollment_cols = sorted(
-                [col for col in merged_df.columns if col.startswith("Enrolled Sp")],
-                key=lambda x: int(x.split()[-1])
+                [col for col in filtered_df.columns if col.startswith("Enrolled")],
+                key=lambda x: int(x.split()[-1]) if x.split()[-1].isdigit() else 0
             )
-            merged_df = merged_df[['Catalog Nbr'] + enrollment_cols]
             
-            # Filter by minimum enrollment if specified
-            if min_enrollment > 0:
+            # Reorder columns with Subject and Catalog Nbr first, then Course_Full, then enrollment data
+            filtered_df = filtered_df[['Subject', 'Catalog Nbr', 'Course_Full'] + enrollment_cols]
+            
+            # Filter by minimum and maximum enrollment if specified
+            if min_enrollment > 0 or (max_enrollment > 0):
                 # Create a column with the maximum enrollment across years
-                merged_df['Max_Enrolled'] = merged_df[[col for col in merged_df.columns if col.startswith('Enrolled')]].max(axis=1)
-                merged_df = merged_df[merged_df['Max_Enrolled'] >= min_enrollment]
-                merged_df = merged_df.drop(columns=['Max_Enrolled'])
+                filtered_df['Max_Enrolled'] = filtered_df[[col for col in filtered_df.columns if col.startswith('Enrolled')]].max(axis=1)
+                
+                # Apply minimum enrollment filter
+                if min_enrollment > 0:
+                    filtered_df = filtered_df[filtered_df['Max_Enrolled'] >= min_enrollment]
+                    
+                # Apply maximum enrollment filter if specified
+                if max_enrollment > 0:
+                    filtered_df = filtered_df[filtered_df['Max_Enrolled'] <= max_enrollment]
+                
+                # Remove the helper column
+                filtered_df = filtered_df.drop(columns=['Max_Enrolled'])
             
             if show_merged_enrollment:
                 st.write("Merged Enrollment Data Across Years:")
-                st.dataframe(merged_df)
+                st.dataframe(filtered_df)
                 
                 # Add download button for enrollment data
-                if not merged_df.empty:
+                if not filtered_df.empty:
                     buffer = io.BytesIO()
                     if download_format == "CSV":
-                        merged_df.to_csv(buffer, index=False)
+                        filtered_df.to_csv(buffer, index=False)
                         file_ext = "csv"
                     else:  # Excel
-                        merged_df.to_excel(buffer, index=False)
+                        filtered_df.to_excel(buffer, index=False)
                         file_ext = "xlsx"
                     
                     buffer.seek(0)
@@ -488,26 +486,26 @@ if uploaded_enrolls and show_enrollment_overview:
                     )
             
             # Create visualization of enrollment trends using Plotly for interactive hover
-            plot_data = merged_df.reset_index().melt(
-                id_vars=['Catalog Nbr'],
+            plot_data = filtered_df.reset_index().melt(
+                id_vars=['Subject', 'Catalog Nbr', 'Course_Full'],
                 value_vars=enrollment_cols,
                 var_name='Year',
                 value_name='Enrollment'
             )
             
-            # Use custom sort function for Catalog Nbr
-            sorted_courses = sort_course_numbers(plot_data['Catalog Nbr'].unique())
+            # Use custom sort function for Course_Full
+            sorted_courses = sort_course_numbers(plot_data['Course_Full'].unique())
             
             # Create interactive bar chart with Plotly
             fig = px.bar(
                 plot_data, 
-                x='Catalog Nbr', 
+                x='Course_Full',  # Use the combined Subject+CourseNum column
                 y='Enrollment', 
                 color='Year',
                 title="Enrollment Trends by Course and Year",
-                labels={'Catalog Nbr': 'Course Number', 'Enrollment': 'Enrollment Count'},
-                hover_data=['Catalog Nbr', 'Year', 'Enrollment'],
-                category_orders={"Catalog Nbr": sorted_courses}
+                labels={'Course_Full': 'Course', 'Enrollment': 'Enrollment Count'},
+                hover_data=['Subject', 'Catalog Nbr', 'Year', 'Enrollment'],
+                category_orders={"Course_Full": sorted_courses}
             )
             
             # Calculate a reasonable maximum for y-axis
@@ -518,7 +516,7 @@ if uploaded_enrolls and show_enrollment_overview:
             fig.update_layout(
                 height=600,  # Fixed height in pixels
                 autosize=True,  # Allow horizontal resizing 
-                xaxis_title="Course Number",
+                xaxis_title="Course",
                 yaxis_title="Enrollment Count",
                 legend_title="Year",
                 barmode='group',
@@ -526,7 +524,8 @@ if uploaded_enrolls and show_enrollment_overview:
                 xaxis=dict(
                     type='category',
                     tickmode='array',
-                    tickvals=sorted_courses
+                    tickvals=sorted_courses,
+                    tickangle=-45  # Angle labels for better readability
                 ),
                 yaxis=dict(
                     range=[0, y_max],  # Explicit range
