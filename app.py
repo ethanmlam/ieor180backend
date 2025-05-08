@@ -83,14 +83,14 @@ with st.expander("ℹ️ Data Format Information"):
     ```
     
     #### Enrollment CSV Format
-    Enrollment files should have the following structure:
+    Enrollment files must have the following structure:
     ```
     Subject    Catalog Nbr    Section
     INDENG     221            1
     INDENG     221            1
     INDENG     221            1
     ```
-    
+    Enrollment files must contain only INDENG courses.
     Each row represents one enrolled student. The app will count them to determine total enrollment per course.
     """)
 
