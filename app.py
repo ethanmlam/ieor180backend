@@ -191,16 +191,6 @@ def process_enrollment_file(uploaded_file, label):
                 df = df[~(df[col].astype(str).str.isspace())]
         
         if 'Catalog Nbr' in df.columns:
-            # No subject filtering - process all courses
-            
-            # Show sample of data
-            with st.expander(f"View sample data from {uploaded_file.name}"):
-                st.dataframe(df.head(5))
-                if 'Subject' in df.columns:
-                    # Just display subjects for information, but don't filter
-                    subject_counts = df['Subject'].value_counts().head(10)
-                    st.info(f"Top subjects (for information only): {', '.join(subject_counts.index.tolist())}")
-            
             # Include Subject in the groupby if it exists
             if 'Subject' in df.columns:
                 # Count occurrences of each Subject + Catalog Nbr combination
@@ -214,8 +204,24 @@ def process_enrollment_file(uploaded_file, label):
                 enrollment_counts['Subject'] = 'UNKNOWN'  # Add a placeholder Subject
                 enrollment_counts['Course_Full'] = enrollment_counts['Catalog Nbr'].astype(str)
             
-            # Success message
-            st.success(f"Successfully processed {len(df)} rows from {uploaded_file.name}, found {len(enrollment_counts)} unique courses")
+            # Create a single expander for file details
+            with st.expander(f"File details: {uploaded_file.name}", expanded=False):
+                # Display success message first
+                st.success(f"Successfully processed {len(df)} rows from {uploaded_file.name}, found {len(enrollment_counts)} unique courses")
+                
+                # Add horizontal rule as a separator
+                st.markdown("---")
+                
+                # Add sample data heading
+                st.markdown("#### Sample Data")
+                st.dataframe(df, height=400)  # Show all data but limit visible height
+                
+                # Show subject information if available
+                if 'Subject' in df.columns:
+                    st.markdown("#### Top Subjects")
+                    subject_counts = df['Subject'].value_counts().head(5)
+                    st.info(f"{', '.join(subject_counts.index.tolist())}")
+            
             return enrollment_counts
         else:
             missing_cols = []
@@ -332,6 +338,22 @@ def process_preference_file(uploaded_file, label):
         
         pref_df.index.name = 'Course'
         
+        # Create a single expander for file details
+        with st.expander(f"File details: {uploaded_file.name}", expanded=False):
+            # Display success message first
+            st.success(f"Successfully processed {len(df)} rows from {uploaded_file.name}, found {len(pref_df)} unique courses")
+            
+            # Add horizontal rule as a separator
+            st.markdown("---")
+            
+            # Add sample data heading
+            st.markdown("#### Sample Data")
+            st.dataframe(df, height=400)  # Show all data but limit visible height
+            
+            # Add detected courses section
+            st.markdown("#### Detected Courses")
+            st.write(", ".join(pref_df['Course'].tolist()))
+        
         return pref_df.reset_index()
         
     except Exception as e:
@@ -401,7 +423,9 @@ if uploaded_enrolls and show_enrollment_overview:
             if df_processed is not None:
                 all_enrollment_dfs.append(df_processed)
                 if show_processing_tables:
-                    st.dataframe(df_processed.head())
+                    with st.expander(f"Processing details for {uploaded_file.name}", expanded=False):
+                        st.markdown("#### Processed Data Summary")
+                        st.dataframe(df_processed, height=400)  # Show all data but limit visible height
         
         # Merge all enrollment DataFrames
         if all_enrollment_dfs:
@@ -557,8 +581,9 @@ if uploaded_prefs:
             if df_processed is not None:
                 all_preference_dfs.append(df_processed)
                 if show_processing_tables:
-                    st.write(f"Processed preference counts for {uploaded_file.name}:")
-                    st.dataframe(df_processed.head())
+                    with st.expander(f"Processing details for {uploaded_file.name}", expanded=False):
+                        st.markdown("#### Processed Preference Counts")
+                        st.dataframe(df_processed, height=400)  # Show all data but limit visible height
         
         # Merge all preference DataFrames
         if all_preference_dfs:
