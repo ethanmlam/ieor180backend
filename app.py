@@ -96,7 +96,7 @@ with st.expander("ℹ️ Data Format Information"):
     """)
 
 # Add demo files section toggle in sidebar
-st.sidebar.header("ExampleFiles")
+st.sidebar.header("Example Files")
 show_demo_files = st.sidebar.checkbox("Show Example Files Section", value=False)
 
 # Sidebar for display options
