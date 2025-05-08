@@ -90,8 +90,9 @@ with st.expander("ℹ️ Data Format Information"):
     INDENG     221            1
     INDENG     221            1
     ```
-    Enrollment files must contain only INDENG courses.
+    For best results, Enrollment files should contain only INDENG courses. Section column should be 1.
     Each row represents one enrolled student. The app will count them to determine total enrollment per course.
+    The app can handle all files of this format including MEng files.
     """)
 
 # Add demo files section toggle in sidebar
@@ -124,11 +125,14 @@ def sort_course_numbers(course_list):
     alphanumeric_courses = []
     
     for course in course_list:
+        # Convert any numeric types to string first
+        course_str = str(course)
+        
         # Check if the course number is purely numeric
-        if course.isdigit():
-            numeric_courses.append(course)
+        if course_str.isdigit():
+            numeric_courses.append(course_str)
         else:
-            alphanumeric_courses.append(course)
+            alphanumeric_courses.append(course_str)
     
     # Sort each group separately
     numeric_courses.sort(key=int)  # Sort numeric courses as integers
@@ -162,14 +166,102 @@ def is_valid_enrollment_file(filename):
 # Function to process enrollment files
 def process_enrollment_file(uploaded_file, label):
     try:
+        # Read CSV with handling for blank rows
         df = pd.read_csv(uploaded_file)
-        if 'Catalog Nbr' in df.columns:
+        # st.dataframe(df.head(10)) 
+        # Drop completely empty rows
+        df = df.dropna(how='all')
+        # For string columns, skip rows with only whitespace
+        for col in df.columns:
+            if df[col].dtype == object:  # Only check string columns
+                df = df[~(df[col].astype(str).str.isspace())]
+        
+        if 'Catalog Nbr' in df.columns and 'Section' in df.columns:
+            # Filter to only include rows where Section is 1 and Subject is INDENG
+            if 'Subject' in df.columns:
+                # Filter rows where subject starts with INDENG
+                df = df[df['Subject'].astype(str).str.startswith('INDENG')]
+            # st.dataframe(df.head(100)) 
+            # Display Section column info
+            # st.write("Section column type:", df['Section'].dtype)
+            # st.write("Section column values:", df['Section'].unique())
+
+            # Convert Section column to numeric values if it's string
+            if df['Section'].dtype == object:  # If it's a string/object type
+                # First save original values for debugging
+                original_section_values = df['Section'].copy()
+                
+                # Try to convert the Section column to numeric
+                # This will extract just the numeric part if values contain other characters
+                # For example, '1' or 'Section 1' will both become 1
+                df['Section'] = pd.to_numeric(df['Section'].astype(str).str.strip().str.extract(r'(\d+)', expand=False), errors='coerce')
+                
+                # Show the conversion results
+                # st.write("Converted Section values:", df['Section'].unique())
+                # st.write("Any NaN values after conversion:", df['Section'].isna().sum())
+                
+                # Filter out rows where conversion failed
+                df = df.dropna(subset=['Section'])
+                
+                # Now filter for Section = 1
+                df = df[df['Section'] == 1]
+            else:
+                # If it's already numeric, just filter
+                df = df[df['Section'] == 1]
+            
             df = df.drop(columns=[col for col in ['Subject', 'Unnamed: 3', 'Unnamed: 4'] if col in df.columns], errors='ignore')
+            
+            # Check for empty dataframe after filtering
+            if df.empty:
+                st.warning(f"No valid rows found in {uploaded_file.name} after filtering")
+                
+                # Show the original dataframe content for debugging
+                df_original = pd.read_csv(uploaded_file)
+                st.error("Original dataframe contents:")
+                # st.dataframe(df_original.head(10))  # Show first 10 rows
+                
+                # Show information about the dataframe
+                st.error(f"DataFrame info: {len(df_original)} rows, columns: {', '.join(df_original.columns.tolist())}")
+                
+                # Show unique values for key columns if they exist
+                if 'Subject' in df_original.columns:
+                    st.error(f"Unique Subject values: {df_original['Subject'].unique()}")
+                if 'Section' in df_original.columns:
+                    st.error(f"Unique Section values: {df_original['Section'].unique()}")
+                if 'Catalog Nbr' in df_original.columns:
+                    st.error(f"Sample Catalog Nbr values: {df_original['Catalog Nbr'].unique()[:10]}")
+                
+                st.info("Make sure your file has rows with INDENG subject and Section = 1. Using all rows instead.")
+                
+                # Try again without filtering
+                df = pd.read_csv(uploaded_file)
+                df = df.dropna(how='all')
+            
+            # Make sure Section is numeric before summing
+            if 'Section' in df.columns and df['Section'].dtype == object:
+                df['Section'] = pd.to_numeric(df['Section'], errors='coerce').fillna(1)
+
+            # Now group by and sum - Section should be numeric
             df = df.groupby('Catalog Nbr').sum(numeric_only=True).rename(columns={'Section': f'Enrolled {label}'})
-            df = df[[f'Enrolled {label}']].reset_index()
-            return df
+            
+            # Verify the renamed column exists
+            if f'Enrolled {label}' in df.columns:
+                df = df[[f'Enrolled {label}']].reset_index()
+                return df
+            else:
+                # If the Section column wasn't numeric or wasn't included in the sum
+                # Count rows instead
+                st.warning(f"Column 'Section' could not be summed in {uploaded_file.name}. Using row count instead.")
+                df = df.groupby('Catalog Nbr').size().reset_index(name=f'Enrolled {label}')
+                return df
         else:
-            st.warning(f"Could not find 'Catalog Nbr' column in {uploaded_file.name}")
+            missing_cols = []
+            if 'Catalog Nbr' not in df.columns:
+                missing_cols.append('Catalog Nbr')
+            if 'Section' not in df.columns:
+                missing_cols.append('Section')
+            st.warning(f"Could not find {', '.join(missing_cols)} column(s) in {uploaded_file.name}")
+            st.info(f"Available columns: {', '.join(df.columns.tolist())}")
             return None
     except Exception as e:
         st.error(f"Error reading enrollment file '{uploaded_file.name}': {str(e)}")
