@@ -276,40 +276,44 @@ def process_preference_file(uploaded_file, label):
         if df.empty or len(df.columns) == 0:
             st.warning(f"No usable data found in '{uploaded_file.name}'. Skipping...")
             return None
+        
+        # For Form Responses files, we expect only one column with preferences
+        # If there are multiple columns, we'll look for the one with INDENG in it
+        preference_column = None
+        if len(df.columns) == 1:
+            # If there's only one column, use it regardless of name
+            preference_column = df.columns[0]
+        else:
+            # Try to find a column with preferences
+            for col in df.columns:
+                sample_data = df[col].dropna().astype(str).head(5).str.contains('INDENG').sum()
+                if sample_data > 0:
+                    preference_column = col
+                    break
+        
+        if preference_column is None:
+            st.warning(f"No column with preference data found in '{uploaded_file.name}'. Skipping...")
+            return None
             
         # Process preferences by rank (focusing on 1st to 4th)
         preference_counts = defaultdict(lambda: defaultdict(int))
         
-        # Handle different data formats
+        # Only process the identified preference column
         for _, row in df.iterrows():
-            # Find a column that might contain preference data
-            pref_text = None
+            pref_text = row[preference_column]
             
-            # Look through all columns for one containing INDENG course info
-            for col in row.index:
-                if pd.notna(row[col]) and isinstance(row[col], str) and 'INDENG' in row[col]:
-                    pref_text = row[col]
-                    break
-            
-            # If we found a column with preference data
-            if pref_text:
-                # Find all INDENG course numbers in the text
-                course_numbers = re.findall(r'INDENG\s+([A-Z]?\d+[A-Z]?)', pref_text)
+            # Skip empty cells
+            if pd.isna(pref_text) or not isinstance(pref_text, str):
+                continue
                 
-                # Process each preference by its position in the list (rank)
-                for idx, catalog in enumerate(course_numbers):
-                    if idx < 4:  # Only count the first 4 preferences
-                        rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
-                        preference_counts[catalog][rank] += 1
-            else:
-                # Try to handle individual columns for each preference
-                for idx, col in enumerate(df.columns):
-                    if idx < 4 and pd.notna(row[col]) and isinstance(row[col], str) and 'INDENG' in row[col]:
-                        match = re.search(r"INDENG\s+([A-Z]?\d+[A-Z]?)", row[col])
-                        if match:
-                            catalog = match.group(1)
-                            rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
-                            preference_counts[catalog][rank] += 1
+            # Find all INDENG course numbers in the text
+            course_numbers = re.findall(r'INDENG\s+([A-Z]?\d+[A-Z]?)', pref_text)
+            
+            # Process each preference by its position in the list (rank)
+            for idx, catalog in enumerate(course_numbers):
+                if idx < 4:  # Only count the first 4 preferences
+                    rank = f"{idx+1}st" if idx == 0 else f"{idx+1}nd" if idx == 1 else f"{idx+1}rd" if idx == 2 else f"{idx+1}th"
+                    preference_counts[catalog][rank] += 1
         
         # If we didn't find any preferences, return None
         if not preference_counts:
@@ -337,11 +341,12 @@ def process_preference_file(uploaded_file, label):
         pref_df = pref_df.rename(columns=labeled_columns)
         
         pref_df.index.name = 'Course'
+        result_df = pref_df.reset_index()
         
         # Create a single expander for file details
         with st.expander(f"File details: {uploaded_file.name}", expanded=False):
             # Display success message first
-            st.success(f"Successfully processed {len(df)} rows from {uploaded_file.name}, found {len(pref_df)} unique courses")
+            st.success(f"Successfully processed {len(df)} rows from {uploaded_file.name}, found {len(result_df)} unique courses")
             
             # Add horizontal rule as a separator
             st.markdown("---")
@@ -352,12 +357,13 @@ def process_preference_file(uploaded_file, label):
             
             # Add detected courses section
             st.markdown("#### Detected Courses")
-            st.write(", ".join(pref_df['Course'].tolist()))
+            st.write(", ".join(result_df['Course'].tolist()))
         
-        return pref_df.reset_index()
+        return result_df
         
     except Exception as e:
         st.error(f"Error processing preference file '{uploaded_file.name}': {str(e)}")
+        st.exception(e)  # Show detailed error for debugging
         return None
 
 # Upload multiple enrollment and preferences CSVs
@@ -592,137 +598,143 @@ if uploaded_prefs:
             selected_year_option = st.selectbox("Filter by Year:", year_filter_options)
             
             # Merge the preference dataframes on 'Course' column
-            merged_prefs_df = reduce(lambda left, right: pd.merge(left, right, on='Course', how='outer'), all_preference_dfs)
-            merged_prefs_df = merged_prefs_df.fillna(0)
-            
-            # Convert to integers to remove decimal points
-            for col in merged_prefs_df.columns:
-                if col != 'Course':
-                    merged_prefs_df[col] = merged_prefs_df[col].astype(int)
-            
-            # Create a custom tidy dataframe for display
-            tidy_df = pd.DataFrame({'Course': merged_prefs_df['Course']})
-            
-            # Get the standard rank labels
-            standard_ranks = ['1st', '2nd', '3rd', '4th']
-            
-            # Add columns based on filter selection
-            if selected_year_option == "All Years":
-                # For each standard rank, sum all columns from all years
-                for rank in standard_ranks:
-                    # Find all columns for this rank across all years
-                    rank_cols = [col for col in merged_prefs_df.columns if rank in col]
-                    if rank_cols:
-                        tidy_df[rank] = merged_prefs_df[rank_cols].sum(axis=1)
-                    else:
-                        tidy_df[rank] = 0
+            try:
+                merged_prefs_df = reduce(lambda left, right: pd.merge(left, right, on='Course', how='outer'), all_preference_dfs)
+                merged_prefs_df = merged_prefs_df.fillna(0)
                 
-                # Add total columns for each year
-                for year in year_labels:
-                    total_col = f"Total {year}"
-                    if any(total_col in col for col in merged_prefs_df.columns):
-                        # Find the exact column name
-                        matching_col = [col for col in merged_prefs_df.columns if total_col in col]
-                        if matching_col:
-                            tidy_df[total_col] = merged_prefs_df[matching_col[0]]
-            else:
-                # Only include columns for the selected year
-                for rank in standard_ranks:
-                    # Find rank columns for this specific year 
-                    rank_col = f"{rank} {selected_year_option}"
-                    matching_cols = [col for col in merged_prefs_df.columns if rank_col in col]
+                # Convert to integers to remove decimal points
+                for col in merged_prefs_df.columns:
+                    if col != 'Course':
+                        merged_prefs_df[col] = merged_prefs_df[col].astype(int)
+                
+                # Create a custom tidy dataframe for display
+                tidy_df = pd.DataFrame({'Course': merged_prefs_df['Course']})
+                
+                # Get the standard rank labels
+                standard_ranks = ['1st', '2nd', '3rd', '4th']
+                
+                # Add columns based on filter selection
+                if selected_year_option == "All Years":
+                    # For each standard rank, sum all columns from all years
+                    for rank in standard_ranks:
+                        # Find all columns for this rank across all years
+                        rank_cols = [col for col in merged_prefs_df.columns if rank in col]
+                        if rank_cols:
+                            tidy_df[rank] = merged_prefs_df[rank_cols].sum(axis=1)
+                        else:
+                            tidy_df[rank] = 0
                     
-                    if matching_cols:
-                        # Use the original rank name in the output dataframe
-                        tidy_df[rank] = merged_prefs_df[matching_cols[0]]
-                    else:
-                        tidy_df[rank] = 0
-                
-                # Add total for the selected year
-                total_col = f"Total {selected_year_option}"
-                matching_total = [col for col in merged_prefs_df.columns if total_col in col]
-                if matching_total:
-                    tidy_df[total_col] = merged_prefs_df[matching_total[0]]
-            
-            # Add Grand Total column
-            tidy_df["Grand Total"] = tidy_df[standard_ranks].sum(axis=1)
-            
-            # Sort by Grand Total descending
-            tidy_df = tidy_df.sort_values("Grand Total", ascending=False)
-            
-            # Filter by minimum preferences if specified
-            if min_preferences > 0:
-                tidy_df = tidy_df[tidy_df["Grand Total"] >= min_preferences]
-            
-            if show_merged_preferences:
-                st.write(f"Preferences Summary by Course ({selected_year_option}):")
-                st.dataframe(tidy_df)
-                
-                # Add download button for preferences data
-                if not tidy_df.empty:
-                    buffer = io.BytesIO()
-                    if download_format == "CSV":
-                        tidy_df.to_csv(buffer, index=False)
-                        file_ext = "csv"
-                    else:  # Excel
-                        tidy_df.to_excel(buffer, index=False)
-                        file_ext = "xlsx"
+                    # Add total columns for each year
+                    for year in year_labels:
+                        total_col = f"Total {year}"
+                        if any(total_col in col for col in merged_prefs_df.columns):
+                            # Find the exact column name
+                            matching_col = [col for col in merged_prefs_df.columns if total_col in col]
+                            if matching_col:
+                                tidy_df[total_col] = merged_prefs_df[matching_col[0]]
+                else:
+                    # Only include columns for the selected year
+                    for rank in standard_ranks:
+                        # Find rank columns for this specific year 
+                        rank_col = f"{rank} {selected_year_option}"
+                        matching_cols = [col for col in merged_prefs_df.columns if rank_col in col]
+                        
+                        if matching_cols:
+                            # Use the original rank name in the output dataframe
+                            tidy_df[rank] = merged_prefs_df[matching_cols[0]]
+                        else:
+                            tidy_df[rank] = 0
                     
-                    buffer.seek(0)
-                    st.download_button(
-                        label="Download Preferences Data",
-                        data=buffer,
-                        file_name=f"preferences_data.{file_ext}",
-                        mime="application/octet-stream"
+                    # Add total for the selected year
+                    total_col = f"Total {selected_year_option}"
+                    matching_total = [col for col in merged_prefs_df.columns if total_col in col]
+                    if matching_total:
+                        tidy_df[total_col] = merged_prefs_df[matching_total[0]]
+                
+                # Add Grand Total column
+                tidy_df["Grand Total"] = tidy_df[standard_ranks].sum(axis=1)
+                
+                # Sort by Grand Total descending
+                tidy_df = tidy_df.sort_values("Grand Total", ascending=False)
+                
+                # Filter by minimum preferences if specified
+                if min_preferences > 0:
+                    tidy_df = tidy_df[tidy_df["Grand Total"] >= min_preferences]
+                
+                if show_merged_preferences:
+                    st.write(f"Preferences Summary by Course ({selected_year_option}):")
+                    st.dataframe(tidy_df)
+                    
+                    # Add download button for preferences data
+                    if not tidy_df.empty:
+                        buffer = io.BytesIO()
+                        if download_format == "CSV":
+                            tidy_df.to_csv(buffer, index=False)
+                            file_ext = "csv"
+                        else:  # Excel
+                            tidy_df.to_excel(buffer, index=False)
+                            file_ext = "xlsx"
+                        
+                        buffer.seek(0)
+                        st.download_button(
+                            label="Download Preferences Data",
+                            data=buffer,
+                            file_name=f"preferences_data.{file_ext}",
+                            mime="application/octet-stream"
+                        )
+                
+                # Create visualization of preference totals if enabled
+                if show_preference_chart and not tidy_df.empty:
+                    # Prepare data for plotting with Plotly
+                    plot_data = tidy_df.copy()
+                    
+                    # Sort courses using custom function (numeric first, then alphanumeric)
+                    sorted_courses = sort_course_numbers(plot_data['Course'].unique())
+                    plot_data['Course'] = pd.Categorical(plot_data['Course'], categories=sorted_courses, ordered=True)
+                    plot_data = plot_data.sort_values('Course')
+                    
+                    # Create a Plotly figure for stacked bar chart with vertical bars
+                    fig = go.Figure()
+                    
+                    # Add each preference rank as a separate bar in the stack
+                    for rank, color in zip(standard_ranks, 
+                                          ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']):
+                        fig.add_trace(go.Bar(
+                            x=plot_data['Course'],  # Use x for Course for vertical bars
+                            y=plot_data[rank],      # Use y for values for vertical bars
+                            name=rank,
+                            marker_color=color,
+                            hovertemplate='Course: %{x}<br>' +
+                                          'Rank: ' + rank + '<br>' +
+                                          'Count: %{y}<extra></extra>'
+                        ))
+                    
+                    fig.update_layout(
+                        title=f"Preference Distribution by Course ({selected_year_option})",
+                        xaxis_title="Course",
+                        yaxis_title="Number of Preferences",
+                        legend_title="Preference Rank",
+                        barmode='stack',
+                        hovermode='closest',
+                        xaxis=dict(
+                            type='category',
+                            tickmode='array',
+                            tickvals=sorted_courses,
+                            tickangle=-45  # Angle the course labels for better readability
+                        )
                     )
-            
-            # Create visualization of preference totals if enabled
-            if show_preference_chart and not tidy_df.empty:
-                # Prepare data for plotting with Plotly
-                plot_data = tidy_df.copy()
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                elif not tidy_df.empty:
+                    st.info("Preference chart display is disabled. Enable it in the sidebar to see the visualization.")
+                else:
+                    st.warning("No preference data to display in chart.")
                 
-                # Sort courses using custom function (numeric first, then alphanumeric)
-                sorted_courses = sort_course_numbers(plot_data['Course'].unique())
-                plot_data['Course'] = pd.Categorical(plot_data['Course'], categories=sorted_courses, ordered=True)
-                plot_data = plot_data.sort_values('Course')
-                
-                # Create a Plotly figure for stacked bar chart with vertical bars
-                fig = go.Figure()
-                
-                # Add each preference rank as a separate bar in the stack
-                for rank, color in zip(standard_ranks, 
-                                      ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']):
-                    fig.add_trace(go.Bar(
-                        x=plot_data['Course'],  # Use x for Course for vertical bars
-                        y=plot_data[rank],      # Use y for values for vertical bars
-                        name=rank,
-                        marker_color=color,
-                        hovertemplate='Course: %{x}<br>' +
-                                      'Rank: ' + rank + '<br>' +
-                                      'Count: %{y}<extra></extra>'
-                    ))
-                
-                fig.update_layout(
-                    title=f"Preference Distribution by Course ({selected_year_option})",
-                    xaxis_title="Course",
-                    yaxis_title="Number of Preferences",
-                    legend_title="Preference Rank",
-                    barmode='stack',
-                    hovermode='closest',
-                    xaxis=dict(
-                        type='category',
-                        tickmode='array',
-                        tickvals=sorted_courses,
-                        tickangle=-45  # Angle the course labels for better readability
-                    )
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-            elif not tidy_df.empty:
-                st.info("Preference chart display is disabled. Enable it in the sidebar to see the visualization.")
-            else:
-                st.warning("No preference data to display in chart.")
+            except Exception as e:
+                st.error(f"Error merging preference dataframes: {str(e)}")
+                st.exception(e)  # Show detailed error for debugging
+                all_preference_dfs = []  # Empty the list so the next condition will be false
                 
     except Exception as e:
         st.error(f"Error processing preferences files: {e}")
